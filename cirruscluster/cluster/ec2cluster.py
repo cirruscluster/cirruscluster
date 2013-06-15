@@ -227,7 +227,7 @@ class Ec2Cluster():
     
     # placement_group compatible only for HPC class instances
     placement_group = None
-    if util.IsHPCInstanceType(instance_type):    
+    if core.IsHPCInstanceType(instance_type):    
       placement_group = self.get_cluster_placement_group() 
     
     instance_ids = []  
@@ -264,7 +264,7 @@ class Ec2Cluster():
     
     # placement_group compatible only for HPC class instances
     placement_group = None
-    if util.IsHPCInstanceType(instance_type):    
+    if core.IsHPCInstanceType(instance_type):    
       placement_group = self.get_cluster_placement_group() 
       
     for number, availability_zone in number_zone_list:
@@ -385,13 +385,14 @@ class Ec2Cluster():
   def get_current_spot_instance_price(self, instance_type, availability_zone):    
     hist = self._ec2Connection.get_spot_price_history(start_time=None, end_time=None, instance_type=instance_type, product_description='Linux/UNIX', availability_zone=availability_zone)    
     
-    assert(hist, 'The requested instance type is not available in this zone. (instance type: %s, zone: %s) Use the AWS console to find the right zone/instance type combo.' % (instance_type, availability_zone))
+    if not hist:
+      raise RuntimeError('The requested instance type is not available in this zone. (instance type: %s, zone: %s) Use the AWS console to find the right zone/instance type combo.' % (instance_type, availability_zone))
     
     # The API doesn't always return history data in sorted order... so sort it increasing by time
     time_format = ''
     for h in hist:   
       #h.timestamp = time.strptime(time_format, h.timestamp)
-      h.datetime = dateutil.parser.parse(h.timestamp)      
+      h.datetime = datecore.parser.parse(h.timestamp)      
     hist.sort(key = lambda v : v.datetime)  
       
     #for h in hist:  

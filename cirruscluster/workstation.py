@@ -1,4 +1,27 @@
+# The MIT License (MIT)
+# 
+# Copyright (c) 2013 Kyle Heath
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
 """ Automates connecting and managing a remote Cirrus Workstation in EC2. """
+
 import logging
 from cirruscluster import core
 from string import Template
@@ -10,6 +33,7 @@ from boto.ec2.connection import EC2Connection
 from boto.s3.connection import S3Connection
 from boto.exception import  BotoServerError
 from boto.s3.key import Key
+import os
 
 workstation_profile = 'cirrus_workstation_profile'
 
@@ -137,7 +161,7 @@ class Manager(object):
     self.region_name = region_name
     self.iam_aws_id = iam_aws_id
     self.iam_aws_secret = iam_aws_secret
-    self.ec2 = EC2Connection(region = util.GetRegion(region_name), 
+    self.ec2 = EC2Connection(region = core.GetRegion(region_name), 
                              aws_access_key_id=iam_aws_id, 
                              aws_secret_access_key=iam_aws_secret)
     self.s3 = S3Connection(aws_access_key_id=iam_aws_id, 
@@ -149,8 +173,8 @@ class Manager(object):
     config_bucketname = 'cirrus_workstation_config_%s' % \
       (hashlib.md5(iam_aws_id).hexdigest())
     src_region = self.region_name
-    dst_regions = util.tested_region_names
-    self.ssh_key = util.InitKeypair(self.ec2, self.s3, config_bucketname, 
+    dst_regions = core.tested_region_names
+    self.ssh_key = core.InitKeypair(self.ec2, self.s3, config_bucketname, 
                                     self.workstation_keypair_name, src_region,
                                     dst_regions, iam_aws_id, iam_aws_secret)
     return
@@ -159,7 +183,7 @@ class Manager(object):
     res = self.ec2.get_all_instances(instance_ids=['i-db6da8b4'])
     test_instance = res[0].instances[0]
     print test_instance.public_dns_name
-    util.WaitForHostsReachable([test_instance.public_dns_name], self.ssh_key)
+    core.WaitForHostsReachable([test_instance.public_dns_name], self.ssh_key)
     return
 
   def ListInstances(self):
@@ -190,16 +214,17 @@ class Manager(object):
   def CreateInstance(self, workstation_name, instance_type, ubuntu_release_name,
                      mapr_version, ami_owner_id = '925479793144'):
     role = 'workstation'
-    ami = util.LookupCirrusAmi(self.ec2, instance_type, ubuntu_release_name,
+    ami = core.LookupCirrusAmi(self.ec2, instance_type, ubuntu_release_name,
                                mapr_version, role, ami_owner_id)
-    assert(ami, 'Failed to find a suitable ami')
+    if not ami:
+      raise RuntimeError('Failed to find a suitable ami')
     self.__CreateWorkstationSecurityGroup() # ensure the security group exists
     # find the IAM Policy Profile
     logging.info( 'Attempting to launch instance with ami: %s' % (ami.id))
     logging.info( 'workstation_profile: %s' % (workstation_profile))
     reservation = self.ec2.run_instances(ami.id,
        key_name = self.workstation_keypair_name,
-       security_groups = [util.workstation_security_group],
+       security_groups = [core.workstation_security_group],
        instance_type = instance_type,
        #placement = prefered_availability_zone,
        disable_api_termination = True,
@@ -210,12 +235,12 @@ class Manager(object):
     instance = reservation.instances[0]
     instance.add_tag(self.workstation_tag, 'true')
     instance.add_tag('Name', workstation_name) # this shows up the AWS management console
-    util.WaitForInstanceRunning(instance)
-    util.WaitForInstanceReachable(instance, self.ssh_key)
+    core.WaitForInstanceRunning(instance)
+    core.WaitForInstanceReachable(instance, self.ssh_key)
     return
 
   def DeviceExists(self, device_name, instance):
-    exists = util.FileExists(device_name, instance.dns_name, self.ssh_key)
+    exists = core.FileExists(device_name, instance.dns_name, self.ssh_key)
     return exists
 
   def ResizeRootVolumeOfInstance(self, instance_id, new_vol_size_gb):
@@ -227,7 +252,8 @@ class Manager(object):
     # get info about current ebs root volume
     instance.update()
     root_device_name = instance.root_device_name
-    assert(root_device_name, 'This instance has no root device.')
+    if not root_device_name:
+      raise RuntimeError('This instance has no root device.')
     logging.info( 'root_device_name: %s' % (root_device_name))
     root_block_map = instance.block_device_mapping[root_device_name]
     assert(root_block_map.volume_id)
@@ -247,10 +273,10 @@ class Manager(object):
     CHECK_GE(new_vol_size_gb, orig_root_volume_size ,'only increasing size has been tested so far...')
     # stop the instance
     # if not stopped, stop the instance
-    if util.GetInstanceState(instance) != 'stopped':
+    if core.GetInstanceState(instance) != 'stopped':
         self.ec2.stop_instances([instance_id])
         logging.info( 'stopping instance')
-        util.WaitForInstanceStopped(instance)
+        core.WaitForInstanceStopped(instance)
     logging.info( 'Instance is stopped')
 
     # if volume not detached, detach it
@@ -258,22 +284,22 @@ class Manager(object):
         logging.info( 'root_block_map.status: %s' % (root_block_map.status))
         logging.info( 'detaching root volume')
         self.ec2.detach_volume(orig_root_volume_id, instance_id, root_device_name)
-        util.WaitForVolumeAvailable(orig_root_volume)
+        core.WaitForVolumeAvailable(orig_root_volume)
     logging.info( 'Root volume is detached')
 
     # Create a snapshot
     snapshot = self.ec2.create_snapshot(orig_root_volume_id, 'temporary snapshot of root vol for resize')
-    util.WaitForSnapshotCompleted(snapshot)
+    core.WaitForSnapshotCompleted(snapshot)
 
     # Create a new larger volume from the snapshot
     #new_volume = snapshot.create_volume(orig_root_volume_zone, size=new_vol_size_gb)
 
     new_volume = self.ec2.create_volume(new_vol_size_gb, orig_root_volume_zone, snapshot = snapshot)
-    util.WaitForVolumeAvailable(new_volume)
+    core.WaitForVolumeAvailable(new_volume)
 
     # Attach the new volume as the root device
     new_volume.attach(instance_id, '/dev/sda1')
-    util.WaitForVolumeAttached(new_volume)
+    core.WaitForVolumeAttached(new_volume)
 
     # TODO delete the old root volume and the temporary snapshot
     logging.info( 'you should delete this snapshot: %s' % (snapshot))
@@ -304,7 +330,7 @@ class Manager(object):
       volume.attach(instance.id, device_name)
 
       # wait for volume to attach
-      util.WaitForVolumeAttached(volume)
+      core.WaitForVolumeAttached(volume)
 
       while not self.DeviceExists(device_name, instance):
           logging.info( 'waiting for device to be attached...')
@@ -320,7 +346,7 @@ class Manager(object):
       extra_vars = {}
       extra_vars['volume_name'] = volume.id
       extra_vars['volume_device'] = device_name
-      assert(util.RunPlaybookOnHost(add_ebs_volume_playbook, hostname, self.ssh_key, extra_vars))
+      assert(core.RunPlaybookOnHost(add_ebs_volume_playbook, hostname, self.ssh_key, extra_vars))
       return
 
 
@@ -328,9 +354,9 @@ class Manager(object):
       instance = self.__GetInstanceById(instance_id)
       if instance.state != 'running':
           instance.start()
-          util.WaitForInstanceRunning(instance)
-          util.WaitForHostsReachable([instance.public_dns_name], self.ssh_key)
-      nx_key = util.ReadRemoteFile('/usr/NX/share/keys/default.id_dsa.key', instance.public_dns_name, self.ssh_key)
+          core.WaitForInstanceRunning(instance)
+          core.WaitForHostsReachable([instance.public_dns_name], self.ssh_key)
+      nx_key = core.ReadRemoteFile('/usr/NX/share/keys/default.id_dsa.key', instance.public_dns_name, self.ssh_key)
       assert(nx_key)
       CHECK_EQ(instance.state, 'running')
       config_content = Template(GetNxsTemplate()).substitute({'public_dns_name' : instance.public_dns_name, 'nx_key' : nx_key})
@@ -338,7 +364,7 @@ class Manager(object):
 
       # TODO(heathkh): Once this operation is performed at ami creatio ntime, this shouldn't be needed at login time
       rm_nx_known_hosts = 'sudo rm /usr/NX/home/nx/.ssh/known_hosts'
-      util.RunCommandOnHost(rm_nx_known_hosts, instance.public_dns_name, self.ssh_key)
+      core.RunCommandOnHost(rm_nx_known_hosts, instance.public_dns_name, self.ssh_key)
       return config_content
 
 
@@ -372,7 +398,7 @@ class Manager(object):
       return instances
 
   def __CreateWorkstationSecurityGroup(self):
-      group_name = util.workstation_security_group
+      group_name = core.workstation_security_group
       group = None
       try:
           groups = self.ec2.get_all_security_groups([group_name])

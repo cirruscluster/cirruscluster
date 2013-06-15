@@ -1,6 +1,25 @@
-"""
-Classes for launching MapR hadoop services.
-"""
+# The MIT License (MIT)
+# 
+# Copyright (c) 2013 Kyle Heath
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
 from multiprocessing import Pool
 from passlib.hash import sha256_crypt
 from snap import ansible
@@ -55,9 +74,9 @@ class MaprCluster(object):
     # fetch or create the ssh key used for all cluster nodes
     self.cluster_keypair_name = 'cirrus_cluster'    
     src_region = config.region_name
-    dst_regions = util.tested_region_names    
+    dst_regions = core.tested_region_names    
     config_bucketname = 'cirrus_cluster_config'
-    self.ssh_key = util.InitKeypair(self.ec2, self.s3, config_bucketname, self.cluster_keypair_name, src_region, dst_regions)
+    self.ssh_key = core.InitKeypair(self.ec2, self.s3, config_bucketname, self.cluster_keypair_name, src_region, dst_regions)
     # make sure we have a local copy of private ssh key so we can connect easily from command line
     cluster_ssh_key_path = os.path.expanduser('~/keys/%s.pem' % self.cluster_keypair_name )
     #logging.info( 'Placing cluster ssh key here: %s' % (cluster_ssh_key_path) )
@@ -139,7 +158,7 @@ class MaprCluster(object):
     hosts = self.__InstancesToHostnames(self.__GetWorkerInstances())
     CHECK_GE(len(hosts), 1)
     # construct the ansible runner and execute on all hosts
-    num_cores_list = util.GetNumCoresOnHosts(hosts, self.ssh_key)
+    num_cores_list = core.GetNumCoresOnHosts(hosts, self.ssh_key)
     min_num_cores = min(num_cores_list)
     max_num_cores = max(num_cores_list)      
     if min_num_cores != max_num_cores:
@@ -153,7 +172,8 @@ class MaprCluster(object):
       params['columns'] = 'service,ttmapSlots,ttReduceSlots'
       params['filter'] = '[service==tasktracker]'
       r = self.__MaprApi('node list', params)
-      assert(r['status'], 'OK')
+      if not r['status'] == 'OK':
+        raise RuntimeError('Failed to get property: %s' % r)
       slot_summary = {}   
       prefetch_maptasks = 1.0 #mapreduce.tasktracker.prefetch.maptasks
       for item in r['data']:
@@ -186,7 +206,8 @@ class MaprCluster(object):
       params['columns'] = 'mtotal'
       params['filter'] = '[service==tasktracker]'
       r = self.__MaprApi('node list', params)
-      assert(r['status'], 'OK')
+      if not r['status'] == 'OK':
+        raise RuntimeError()
       ram_summary = []   
       prefetch_maptasks = 1.0 #mapreduce.tasktracker.prefetch.maptasks
       for item in r['data']:
@@ -244,7 +265,7 @@ class MaprCluster(object):
     extra_vars = {'map_slots_param': map_slots_param,
                   'reduce_slots_param': reduce_slots_param,
                   'hadoop_conf_dir' : self.hadoop_conf_dir}
-    return util.RunPlaybookOnHosts(self.playbooks_path + '/mapred-site.yml', self.__InstancesToHostnames(instances), self.ssh_key, extra_vars)
+    return core.RunPlaybookOnHosts(self.playbooks_path + '/mapred-site.yml', self.__InstancesToHostnames(instances), self.ssh_key, extra_vars)
   
   def ConfigureLazyWorkers(self):
     """ Lazy workers are instances that are running and reachable but failed to 
@@ -258,7 +279,7 @@ class MaprCluster(object):
     return
 
   def TerminateUnreachableInstances(self):
-    unreachable_instances = util.GetUnreachableInstances(self.__GetWorkerInstances(), self.ssh_key)    
+    unreachable_instances = core.GetUnreachableInstances(self.__GetWorkerInstances(), self.ssh_key)    
     print 'unreachable_instances: '
     print unreachable_instances
     self.cluster.terminate_instances(unreachable_instances)
@@ -292,11 +313,14 @@ class MaprCluster(object):
     assert(config.cluster_name)
     assert(config.cluster_instance_type)
     assert(config.region_name)
-    assert(config.mapr_version, 'config missing mapr_version: (e.g. v2.1.3) see http://package.mapr.com/releases/ ')
-    CHECK_GE(len(config.zones), 1) # at least one zone must be specified
+    if not config.mapr_version:
+      raise RuntimeError('config missing mapr_version: (e.g. v2.1.3) see http://package.mapr.com/releases/ ')
+    assert(len(config.zones) >= 1) # at least one zone must be specified
     tested_instance_types = ['cc1.4xlarge', 'cc2.8xlarge', 'c1.xlarge']
-    assert(config.cluster_instance_type in tested_instance_types, 'this instance type has not been tested')
-    CHECK_NE(config.cluster_instance_type, 'cr1.8xlarge', 'Currently not supported because mapr start_node perl script can not handle the fact that swap is bigger than ssd disk not to mention the required cache size.')
+    if not config.cluster_instance_type in tested_instance_types:
+      raise RuntimeError('this instance type has not been tested: %s' %  config.cluster_instance_type)
+    if config.cluster_instance_type == 'cr1.8xlarge':
+      raise RuntimeError('Currently not supported because mapr start_node perl script can not handle the fact that swap is bigger than ssd disk not to mention the required cache size.')
     valid_zones = ['a','b','c','d','e'] 
     for zone in config.zones:
       assert(zone in valid_zones) 
@@ -325,7 +349,7 @@ class MaprCluster(object):
     logging.info( 'ConfigureClient')
     unmount_nfs_cmd = 'sudo umount -l /mapr'
     logging.info( 'unmounting nfs')
-    util.ExecuteCmd(unmount_nfs_cmd)
+    core.ExecuteCmd(unmount_nfs_cmd)
     # try to start the nfs server and make sure it starts OK... 
     # if it doesn't ask the user to apply license and retry until success
     logging.info( 'Enabling NFS server...')    
@@ -341,21 +365,21 @@ class MaprCluster(object):
     assert(master_instance)
     # TODO(kheath): allow the cluster name to be configure instead of hardwired MyCluster
     configure_mapr_client_cmd = 'sudo rm -rf /opt/mapr/conf/mapr-clusters.conf; sudo /opt/mapr/server/configure.sh -N %s -c -C %s:7222' % (self.config.cluster_name, master_instance.private_ip)
-    util.ExecuteCmd(configure_mapr_client_cmd)
+    core.ExecuteCmd(configure_mapr_client_cmd)
     
     # if needed, create /mapr as root of all nfs mount points
     if not os.path.exists('/mapr'):
-      util.ExecuteCmd('sudo mkdir /mapr')
-      util.ExecuteCmd('sudo chmod 777 /mapr')
+      core.ExecuteCmd('sudo mkdir /mapr')
+      core.ExecuteCmd('sudo chmod 777 /mapr')
     
     #mount_nfs_cmd = 'sudo mount -o nolock %s:/mapr/%s /mapr' % (master_instance.private_ip, self.config.cluster_name)
     mount_nfs_cmd = 'sudo mount -o nolock %s:/mapr /mapr' % (master_instance.private_ip)
     perm_nfs_cmd = 'sudo chmod -R 777 /mapr/%s' % (self.config.cluster_name)
     
     logging.info( 'mounting nfs')
-    util.ExecuteCmd(mount_nfs_cmd)
+    core.ExecuteCmd(mount_nfs_cmd)
     logging.info( 'setting nfs permissions')
-    util.ExecuteCmd(perm_nfs_cmd)
+    core.ExecuteCmd(perm_nfs_cmd)
     return
 
   def __SetupMasterTopology(self):
@@ -381,7 +405,7 @@ class MaprCluster(object):
                   'master_ip': master_instance.private_ip,
                   'root_password_hash': root_password_hash,
                   'is_master' : True}
-    assert(util.RunPlaybookOnHost(self.playbooks_path + '/master.yml', master_instance.private_ip, self.ssh_key, extra_vars))    
+    core.RunPlaybookOnHost(self.playbooks_path + '/master.yml', master_instance.private_ip, self.ssh_key, extra_vars))    
     self.__WaitForMasterReady()    
     self.__SetupMasterTopology()
     # instruct the user to log in to web ui and install license and start nfs service
@@ -426,7 +450,7 @@ class MaprCluster(object):
     web_ui_url = self.__GetWebUiUrl()      
     try:
       print 'testing: %s' % (web_ui_url) 
-      util.UrlGet(web_ui_url)        
+      core.UrlGet(web_ui_url)        
       web_ui_ready = True
     except urllib2.URLError as e:
       print e      
@@ -436,7 +460,7 @@ class MaprCluster(object):
     ready = False                        
     try:
       print 'testing: %s' % (url) 
-      util.UrlGet(url)        
+      core.UrlGet(url)        
       ready = True
     except:
       print '.'
@@ -473,7 +497,7 @@ class MaprCluster(object):
 
   def __SetupAccessControl(self):
     # modify security group to allow this machine (i.e. those in workstation group) to ssh to cluster nodes    
-    client_security_group = self.cluster._ec2Connection.get_all_security_groups(groupnames=[util.workstation_security_group])[0] 
+    client_security_group = self.cluster._ec2Connection.get_all_security_groups(groupnames=[core.workstation_security_group])[0] 
     cluster_security_group = self.cluster._ec2Connection.get_all_security_groups(groupnames=[self.config.cluster_name])[0]                 
     cluster_security_group.revoke(src_group=client_security_group) # be sure this group not yet authorized, or next command fails
     cluster_security_group.authorize(src_group=client_security_group)
@@ -506,7 +530,7 @@ class MaprCluster(object):
     return
   
 #  def __TerminateUnreachableInstances(self, instances):
-#    unreachable_instances = util.GetUnreachableInstances(instances, self.ssh_key)
+#    unreachable_instances = core.GetUnreachableInstances(instances, self.ssh_key)
 #    print 'unreachable_instances: %s' % (unreachable_instances)
 #    self.cluster.ec2.terminate_instances(instances)
 #    return
@@ -600,7 +624,7 @@ class MaprCluster(object):
     return 
   
     
-  @util.RetryUntilReturnsTrue(tries=10)
+  @core.RetryUntilReturnsTrue(tries=10)
   def __CreateCacheVolume(self, new_rack_toplogy):
     logging.info( '__CreateCacheVolume()')
     # set the desired topology for the new volume
@@ -642,7 +666,7 @@ class MaprCluster(object):
     # set permisions
     logging.info( 'about to fix cache permissions...')
     perm_nfs_cmd = 'sudo chmod -R 777 /mapr/%s/%s' % (self.config.cluster_name, mount_path)
-    util.ExecuteCmd(perm_nfs_cmd)  
+    core.ExecuteCmd(perm_nfs_cmd)  
     # reset to the default topology /inactive
     params = {'values' : '{"cldb.default.volume.topology":"/inactive"}' }
     result = self.__MaprApi('config/save', params)
@@ -705,13 +729,13 @@ class MaprCluster(object):
     if not worker_instances:
       return
     master_instance = self.__GetMasterInstance()
-    master_pub_key = util.ReadRemoteFile('/root/.ssh/id_rsa.pub', master_instance.public_hostname, self.ssh_key)
+    master_pub_key = core.ReadRemoteFile('/root/.ssh/id_rsa.pub', master_instance.public_hostname, self.ssh_key)
     master_pub_key = master_pub_key.strip() # ensure newline is removed... otherwise there is an error!
     hostnames = self.__InstancesToHostnames(worker_instances)
     extra_vars = {'cluster_name': self.config.cluster_name,
                   'master_ip': master_instance.private_ip,
                   'master_pub_key': master_pub_key}
-    assert(util.RunPlaybookOnHosts(self.playbooks_path + '/worker.yml', hostnames, self.ssh_key, extra_vars))
+    assert(core.RunPlaybookOnHosts(self.playbooks_path + '/worker.yml', hostnames, self.ssh_key, extra_vars))
     num_cores = self.GetNumCoresPerWorker()
     num_map_slots = num_cores
     num_reduce_slots = num_cores - 1 
@@ -780,16 +804,16 @@ class MaprCluster(object):
   
   def __WaitForInstancesReachable(self, instances):
     assert(instances)        
-    util.WaitForHostsReachable(self.__InstancesToHostnames(instances),
+    core.WaitForHostsReachable(self.__InstancesToHostnames(instances),
                                 self.ssh_key)
     return
   
   def __AreInstancesReachable(self, instances):
-    return util.AreHostsReachable(self.__InstancesToHostnames(instances),
+    return core.AreHostsReachable(self.__InstancesToHostnames(instances),
                            self.ssh_key)
   
   def __RunCommandOnInstances(self, cmd, instances):    
-    return util.RunCommandOnHosts(cmd, 
+    return core.RunCommandOnHosts(cmd, 
                           self.__InstancesToHostnames(instances), 
                           self.ssh_key)
     
@@ -797,7 +821,7 @@ class MaprCluster(object):
       # Compute a good bid price based on recent price history
       prefered_master_zone = self._GetAvailabilityZoneNameByIndex(0)
       role = 'master'
-      ami = util.LookupCirrusAmi(self.ec2, 
+      ami = core.LookupCirrusAmi(self.ec2, 
                                  self.config.cluster_instance_type, 
                                  self.config.ubuntu_release_name, 
                                  self.config.mapr_version, 
@@ -828,7 +852,7 @@ class MaprCluster(object):
       CHECK_LT(high_availability_bid_price, 1.25) # sanity check so we don't do something stupid
       # get the ami preconfigured as a master mapr node
       role = 'master'
-      ami = util.LookupCirrusAmi(self.ec2, 
+      ami = core.LookupCirrusAmi(self.ec2, 
                                  self.config.cluster_instance_type, 
                                  self.config.ubuntu_release_name, 
                                  self.config.mapr_version, 
@@ -846,7 +870,7 @@ class MaprCluster(object):
   
   def __LaunchOnDemandWorkerInstances(self, number_zone_list): 
       role = 'worker'
-      ami = util.LookupCirrusAmi(self.ec2, 
+      ami = core.LookupCirrusAmi(self.ec2, 
                                  self.config.cluster_instance_type, 
                                  self.config.ubuntu_release_name, 
                                  self.config.mapr_version, 
@@ -872,7 +896,7 @@ class MaprCluster(object):
     assert(bid_price < 0.5) # safety check!     
     print 'bid_price: %f' % (bid_price) 
     role = 'worker'
-    ami = util.LookupCirrusAmi(self.ec2, 
+    ami = core.LookupCirrusAmi(self.ec2, 
                                self.config.cluster_instance_type, 
                                self.config.ubuntu_release_name, 
                                self.config.mapr_version, 

@@ -1,8 +1,8 @@
 from Crypto.PublicKey import RSA
 from boto import exception
-from boto.ec2 import connection
+import boto
 from boto.s3.key import Key
-from ext import ansible
+from cirruscluster.ext import ansible
 from ext.ansible import callbacks
 from ext.ansible import inventory
 from ext.ansible import playbook

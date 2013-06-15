@@ -1,3 +1,25 @@
+# The MIT License (MIT)
+# 
+# Copyright (c) 2013 Kyle Heath
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
 """ Tools to automate creation of workstation, master, and worker AMIs. """ 
 from boto.ec2.connection import EC2Connection
 from cirruscluster import core
@@ -22,7 +44,7 @@ class AmiSpecification(object):
     self.mapr_version = mapr_version
     self.role = role        
     self.root_store_type, self.virtualization_type = \
-      util.GetRootStoreAndVirtualizationType(self.instance_type)
+      core.GetRootStoreAndVirtualizationType(self.instance_type)
     # Currently only have tools to create ebs backed amis... 
     self.root_store_type = 'ebs'
     self.ami_name = core.GetAmiName(ami_release_name, ubuntu_release_name, 
@@ -100,7 +122,7 @@ class AmiBuilder(object):
       
     print 'terminating template instance'
     self.ec2.terminate_instances(instance_ids=[template_instance.id])
-    util.WaitForInstanceTerminated(template_instance)    
+    core.WaitForInstanceTerminated(template_instance)    
     return
   
   def GetInstanceById(self, instance_id):
@@ -118,17 +140,17 @@ class AmiBuilder(object):
     self.__CreateSshSecurityGroup()    
     reservation = template_image.run(key_name=self.key_pair.name, security_groups=['ssh'], instance_type=self.ami_spec.instance_type)  
     instance = reservation.instances[0]
-    util.WaitForInstanceRunning(instance)    
-    util.WaitForHostsReachable([instance.public_dns_name], self.ssh_key)    
+    core.WaitForInstanceRunning(instance)    
+    core.WaitForHostsReachable([instance.public_dns_name], self.ssh_key)    
     return instance
   
   def __ConfigureAsWorkstation(self, instance):
     logging.info('Configuring a workstation...')
     playbook = os.path.dirname(__file__) + '/templates/workstation/workstation.yml'
     extra_vars = {'mapr_version' : self.ami_spec.mapr_version}
-    assert(util.RunPlaybookOnHost(playbook, instance.dns_name, self.ssh_key, extra_vars = extra_vars))
+    assert(core.RunPlaybookOnHost(playbook, instance.dns_name, self.ssh_key, extra_vars = extra_vars))
     
-    nx_client_ssh_key = util.ReadRemoteFile('/usr/NX/share/keys/default.id_dsa.key', instance.dns_name, self.ssh_key)    
+    nx_client_ssh_key = core.ReadRemoteFile('/usr/NX/share/keys/default.id_dsa.key', instance.dns_name, self.ssh_key)    
     print 'To connect with NX Client, you must paste this key into the gui advanced settings config.'
     print nx_client_ssh_key
     return
@@ -138,24 +160,24 @@ class AmiBuilder(object):
     playbook = os.path.dirname(__file__) + '/templates/cluster/master.yml'
     extra_vars = {'mapr_version' : self.ami_spec.mapr_version,
                   'is_master' : True}
-    assert(util.RunPlaybookOnHost(playbook, instance.dns_name, self.ssh_key, extra_vars = extra_vars))
+    assert(core.RunPlaybookOnHost(playbook, instance.dns_name, self.ssh_key, extra_vars = extra_vars))
     return
   
   def __ConfigureAsClusterWorker(self, instance):
     logging.info('Configuring a cluster worker...')  
     playbook = os.path.dirname(__file__) + '/templates/cluster/worker.yml'
     extra_vars = {'mapr_version' : self.ami_spec.mapr_version}
-    assert(util.RunPlaybookOnHost(playbook, instance.dns_name, self.ssh_key, extra_vars = extra_vars))
+    assert(core.RunPlaybookOnHost(playbook, instance.dns_name, self.ssh_key, extra_vars = extra_vars))
     return
    
   def __SecurityScrub(self, instance):
     # delete the shell history 
-    assert(util.RunCommandOnHost('sudo find /root/.*history /home/*/.*history -exec rm -f {} \;', instance.dns_name, self.ssh_key))
+    assert(core.RunCommandOnHost('sudo find /root/.*history /home/*/.*history -exec rm -f {} \;', instance.dns_name, self.ssh_key))
     # Clear nx cache of known hosts, otherwise first login fails until this is cleared
-    util.RunCommandOnHost('sudo rm /usr/NX/home/nx/.ssh/known_hosts', instance.dns_name, self.ssh_key)
+    core.RunCommandOnHost('sudo rm /usr/NX/home/nx/.ssh/known_hosts', instance.dns_name, self.ssh_key)
     # Only run this right before you create the ami
     # After you do this, you can't make a new connection because key pair is gone!
-    assert(util.RunCommandOnHost('sudo find / -name "authorized_keys" -exec rm -f {} \;', instance.dns_name, self.ssh_key))
+    assert(core.RunCommandOnHost('sudo find / -name "authorized_keys" -exec rm -f {} \;', instance.dns_name, self.ssh_key))
     return
      
   def __CreateEbsAmi(self, instance):    
@@ -163,7 +185,7 @@ class AmiBuilder(object):
     # step 1: stop the instance so it is in a consistent state
     self.ec2.stop_instances(instance_ids=[instance.id])
     # wait till stopped
-    util.WaitForInstanceStopped(instance)
+    core.WaitForInstanceStopped(instance)
     logging.info('instance stopped... ready to create image: %s' % (instance.id))
     ami_description = self.ami_spec.ami_name
     new_ami_id = self.ec2.create_image(instance.id, self.ami_spec.ami_name, ami_description)
@@ -193,9 +215,9 @@ class AmiBuilder(object):
      
   def __GetTemplateImage(self):
     # maps region name to the template ami used to create mapr images
-    #template_ami_id = util.GetUbuntuAmiForInstanceType(self.ami_spec.ubuntu_release_name, self.ami_spec.region_name, self.ami_spec.instance_type)
+    #template_ami_id = core.GetUbuntuAmiForInstanceType(self.ami_spec.ubuntu_release_name, self.ami_spec.region_name, self.ami_spec.instance_type)
     
-    template_ami_id = util.SearchUbuntuAmiDatabase(self.ami_spec.ubuntu_release_name, self.ami_spec.region_name, self.ami_spec.root_store_type, self.ami_spec.virtualization_type)
+    template_ami_id = core.SearchUbuntuAmiDatabase(self.ami_spec.ubuntu_release_name, self.ami_spec.region_name, self.ami_spec.root_store_type, self.ami_spec.virtualization_type)
     
     template_images = self.ec2.get_all_images([template_ami_id])
     if (len(template_images) != 1):
