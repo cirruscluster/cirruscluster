@@ -6,7 +6,7 @@ setup(
   version='0.0.6dev', # use semantic version conventions
   packages= find_packages(),
   license='MIT',
-  long_description=open('README.rst').read(),
+  long_description=open('README.md').read(),
   install_requires=['distribute', 
                     'docutils>=0.3', 
                     'boto>=2.9.5',
