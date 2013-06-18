@@ -10,15 +10,13 @@ setup(
   install_requires=['distribute', 
                     'docutils>=0.3', 
                     'boto>=2.9.5',
-                    'pycrypto>=2.6',
+                    'pycrypto', # this seems hard to satisfy on Win
                     'pyyaml>=3.10',
                     'Jinja2>=2.7',
                     'paramiko>=1.10.1',
-                    'paramiko',
                     'python-dateutil>=2.1',
                     'requests>=1.2',
                     'passlib>=1.6.1',
-                    
                     ],
   package_data={'cirruscluster': ['cluster/playbooks/*', 'ami/playbooks/cluster/*', 'ami/playbooks/workstation/*']},
   include_package_data=True,    
