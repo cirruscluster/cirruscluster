@@ -18,9 +18,9 @@
 #############################################
 
 import subprocess
-import ansible.constants as C
-from ansible.inventory.host import Host
-from ansible.inventory.group import Group
+import cirruscluster.ext.ansible.constants as C
+from cirruscluster.ext.ansible.inventory.host import Host
+from cirruscluster.ext.ansible.inventory.group import Group
 from ansible import utils
 from ansible import errors
 

@@ -19,7 +19,7 @@ import os
 import glob
 from ansible import errors
 from ansible import utils
-import ansible.constants as C
+import cirruscluster.ext.ansible.constants as C
 
 class VarsModule(object):
 

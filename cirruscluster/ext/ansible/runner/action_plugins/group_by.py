@@ -17,10 +17,10 @@
 
 import ansible
 
-from ansible.callbacks import vv
-from ansible.errors import AnsibleError as ae
-from ansible.runner.return_data import ReturnData
-from ansible.utils import parse_kv, template, check_conditional
+from cirruscluster.ext.ansible.callbacks import vv
+from cirruscluster.ext.ansible.errors import AnsibleError as ae
+from cirruscluster.ext.ansible.runner.return_data import ReturnData
+from cirruscluster.ext.ansible.utils import parse_kv, template, check_conditional
 
 class ActionModule(object):
     ''' Create inventory groups based on variables '''
@@ -61,12 +61,12 @@ class ActionModule(object):
         for group, hosts in groups.items():
             inv_group = inventory.get_group(group)
             if not inv_group:
-                inv_group = ansible.inventory.Group(name=group)
+                inv_group = cirruscluster.ext.ansible.inventory.Group(name=group)
                 inventory.add_group(inv_group)
             for host in hosts:
                 inv_host = inventory.get_host(host)
                 if not inv_host:
-                    inv_host = ansible.inventory.Host(name=host)
+                    inv_host = cirruscluster.ext.ansible.inventory.Host(name=host)
                 if inv_group not in inv_host.get_groups():
                     result['changed'] = True
                     inv_group.add_host(inv_host)

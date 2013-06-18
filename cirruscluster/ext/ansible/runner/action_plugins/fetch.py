@@ -22,11 +22,11 @@ import traceback
 import tempfile
 import base64
 
-import ansible.constants as C
+import cirruscluster.ext.ansible.constants as C
 from ansible import utils
 from ansible import errors
 from ansible import module_common
-from ansible.runner.return_data import ReturnData
+from cirruscluster.ext.ansible.runner.return_data import ReturnData
 
 class ActionModule(object):
 

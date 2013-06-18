@@ -18,7 +18,7 @@
 import ansible
 
 from ansible import utils
-from ansible.runner.return_data import ReturnData
+from cirruscluster.ext.ansible.runner.return_data import ReturnData
 
 class ActionModule(object):
     ''' Print statements during execution '''

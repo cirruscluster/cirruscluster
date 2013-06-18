@@ -19,7 +19,7 @@ import os
 import sys
 import glob
 import imp
-import ansible.constants as C
+import cirruscluster.ext.ansible.constants as C
 from ansible import errors
 
 _basedirs = []

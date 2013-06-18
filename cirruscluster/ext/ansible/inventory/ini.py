@@ -17,18 +17,18 @@
 
 #############################################
 
-import ansible.constants as C
-from ansible.inventory.host import Host
-from ansible.inventory.group import Group
-from ansible.inventory.expand_hosts import detect_range
-from ansible.inventory.expand_hosts import expand_hostname_range
+import cirruscluster.ext.ansible.constants as C
+from cirruscluster.ext.ansible.inventory.host import Host
+from cirruscluster.ext.ansible.inventory.group import Group
+from cirruscluster.ext.ansible.inventory.expand_hosts import detect_range
+from cirruscluster.ext.ansible.inventory.expand_hosts import expand_hostname_range
 from ansible import errors
 import shlex
 import re
 
 class InventoryParser(object):
     """
-    Host inventory for ansible.
+    Host inventory for cirruscluster.ext.ansible.
     """
 
     def __init__(self, filename=C.DEFAULT_HOST_LIST):

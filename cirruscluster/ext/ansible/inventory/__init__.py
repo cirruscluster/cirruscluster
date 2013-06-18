@@ -22,17 +22,17 @@ import os
 import re
 
 import subprocess
-import ansible.constants as C
-from ansible.inventory.ini import InventoryParser
-from ansible.inventory.script import InventoryScript
-from ansible.inventory.group import Group
-from ansible.inventory.host import Host
+import cirruscluster.ext.ansible.constants as C
+from cirruscluster.ext.ansible.inventory.ini import InventoryParser
+from cirruscluster.ext.ansible.inventory.script import InventoryScript
+from cirruscluster.ext.ansible.inventory.group import Group
+from cirruscluster.ext.ansible.inventory.host import Host
 from ansible import errors
 from ansible import utils
 
 class Inventory(object):
     """
-    Host inventory for ansible.
+    Host inventory for cirruscluster.ext.ansible.
     """
 
     __slots__ = [ 'host_list', 'groups', '_restriction', '_also_restriction', '_subset', '_is_script',

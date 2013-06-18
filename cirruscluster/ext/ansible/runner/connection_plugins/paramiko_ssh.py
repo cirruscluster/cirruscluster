@@ -20,7 +20,7 @@ import os
 import pipes
 import socket
 import random
-from ansible.callbacks import vvv
+from cirruscluster.ext.ansible.callbacks import vvv
 from ansible import errors
 from ansible import utils
 import StringIO

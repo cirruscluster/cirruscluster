@@ -21,12 +21,12 @@ import random
 import traceback
 import tempfile
 
-import ansible.constants as C
+import cirruscluster.ext.ansible.constants as C
 from ansible import utils
 from ansible import errors
 from ansible import module_common
-from ansible.runner.return_data import ReturnData
-from ansible.callbacks import vv, vvv
+from cirruscluster.ext.ansible.runner.return_data import ReturnData
+from cirruscluster.ext.ansible.callbacks import vv, vvv
 
 class ActionModule(object):
 

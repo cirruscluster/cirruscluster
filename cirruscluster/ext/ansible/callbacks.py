@@ -15,14 +15,14 @@
 # You should have received a copy of the GNU General Public License
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 
-import utils
+import cirruscluster.ext.ansible.utils
 import sys
 import getpass
 import os
 import subprocess
 import os.path
-from ansible.color import stringc
-import ansible.constants as C
+from cirruscluster.ext.ansible.color import stringc
+import cirruscluster.ext.ansible.constants as C
 
 cowsay = None
 if os.getenv("ANSIBLE_NOCOWS") is not None:

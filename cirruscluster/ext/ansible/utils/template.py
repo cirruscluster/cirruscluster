@@ -22,7 +22,7 @@ import jinja2
 import yaml
 import json
 from ansible import errors
-import ansible.constants as C
+import cirruscluster.ext.ansible.constants as C
 import time
 import subprocess
 import datetime

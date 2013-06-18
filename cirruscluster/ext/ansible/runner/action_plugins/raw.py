@@ -17,10 +17,10 @@
 
 import re
 
-import ansible.constants as C
+import cirruscluster.ext.ansible.constants as C
 from ansible import utils
 from ansible import errors
-from ansible.runner.return_data import ReturnData
+from cirruscluster.ext.ansible.runner.return_data import ReturnData
 
 class ActionModule(object):
     NEEDS_TMPPATH = False
