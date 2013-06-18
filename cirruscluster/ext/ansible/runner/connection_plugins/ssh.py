@@ -23,8 +23,8 @@ import pipes
 import random
 import select
 import fcntl
-import ansible.constants as C
-from ansible.callbacks import vvv
+import cirruscluster.ext.ansible.constants as C
+from cirruscluster.ext.ansible.callbacks import vvv
 from ansible import errors
 from ansible import utils
 

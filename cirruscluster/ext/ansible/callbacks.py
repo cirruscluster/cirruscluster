@@ -21,8 +21,8 @@ import getpass
 import os
 import subprocess
 import os.path
-from ansible.color import stringc
-import ansible.constants as C
+from cirruscluster.ext.ansible.color import stringc
+import cirruscluster.ext.ansible.constants as C
 
 cowsay = None
 if os.getenv("ANSIBLE_NOCOWS") is not None:

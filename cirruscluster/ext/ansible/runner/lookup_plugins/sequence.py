@@ -15,8 +15,8 @@
 # You should have received a copy of the GNU General Public License
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 
-from ansible.errors import AnsibleError
-from ansible.utils import parse_kv
+from cirruscluster.ext.ansible.errors import AnsibleError
+from cirruscluster.ext.ansible.utils import parse_kv
 from re import compile as re_compile, IGNORECASE
 
 # shortcut format

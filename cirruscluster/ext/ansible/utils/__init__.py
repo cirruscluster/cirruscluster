@@ -24,9 +24,9 @@ import optparse
 import operator
 from ansible import errors
 from ansible import __version__
-from ansible.utils.template import *
-from ansible.utils.plugins import *
-import ansible.constants as C
+from cirruscluster.ext.ansible.utils.template import *
+from cirruscluster.ext.ansible.utils.plugins import *
+import cirruscluster.ext.ansible.constants as C
 import time
 import StringIO
 import stat

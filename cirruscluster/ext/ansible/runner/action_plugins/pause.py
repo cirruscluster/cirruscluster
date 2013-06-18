@@ -15,10 +15,10 @@
 # You should have received a copy of the GNU General Public License
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 
-from ansible.callbacks import vv
-from ansible.errors import AnsibleError as ae
-from ansible.runner.return_data import ReturnData
-from ansible.utils import getch, template, parse_kv
+from cirruscluster.ext.ansible.callbacks import vv
+from cirruscluster.ext.ansible.errors import AnsibleError as ae
+from cirruscluster.ext.ansible.runner.return_data import ReturnData
+from cirruscluster.ext.ansible.utils import getch, template, parse_kv
 from termios import tcflush, TCIFLUSH
 import datetime
 import sys

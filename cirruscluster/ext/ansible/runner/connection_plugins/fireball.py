@@ -18,7 +18,7 @@
 import json
 import os
 import base64
-from ansible.callbacks import vvv
+from cirruscluster.ext.ansible.callbacks import vvv
 from ansible import utils
 from ansible import errors
 from ansible import constants

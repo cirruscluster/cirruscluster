@@ -19,7 +19,7 @@
 
 from ansible import utils
 from ansible import errors
-from ansible.playbook.task import Task
+from cirruscluster.ext.ansible.playbook.task import Task
 import shlex
 import os
 

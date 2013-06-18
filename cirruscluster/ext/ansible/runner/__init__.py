@@ -30,15 +30,15 @@ import base64
 import sys
 import shlex
 
-import ansible.constants as C
-import ansible.inventory
+import cirruscluster.ext.ansible.constants as C
+import cirruscluster.ext.ansible.inventory
 from ansible import utils
 from ansible import errors
 from ansible import module_common
 import poller
 import connection
 from return_data import ReturnData
-from ansible.callbacks import DefaultRunnerCallbacks, vv
+from cirruscluster.ext.ansible.callbacks import DefaultRunnerCallbacks, vv
 
 HAS_ATFORK=True
 try:
@@ -124,7 +124,7 @@ class Runner(object):
         self.callbacks        = utils.default(callbacks, lambda: DefaultRunnerCallbacks())
         self.generated_jid    = str(random.randint(0, 999999999999))
         self.transport        = transport
-        self.inventory        = utils.default(inventory, lambda: ansible.inventory.Inventory(host_list))
+        self.inventory        = utils.default(inventory, lambda: cirruscluster.ext.ansible.inventory.Inventory(host_list))
 
         self.module_vars      = utils.default(module_vars, lambda: {})
         self.sudo_user        = sudo_user

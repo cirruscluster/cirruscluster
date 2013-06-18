@@ -17,12 +17,12 @@
 
 import ansible
 
-from ansible.callbacks import vv
-from ansible.errors import AnsibleError as ae
-from ansible.runner.return_data import ReturnData
-from ansible.utils import parse_kv, template
-from ansible.inventory.host import Host
-from ansible.inventory.group import Group
+from cirruscluster.ext.ansible.callbacks import vv
+from cirruscluster.ext.ansible.errors import AnsibleError as ae
+from cirruscluster.ext.ansible.runner.return_data import ReturnData
+from cirruscluster.ext.ansible.utils import parse_kv, template
+from cirruscluster.ext.ansible.inventory.host import Host
+from cirruscluster.ext.ansible.inventory.group import Group
 
 class ActionModule(object):
     ''' Create inventory hosts and groups in the memory inventory'''

@@ -15,12 +15,12 @@
 # You should have received a copy of the GNU General Public License
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 
-import ansible.inventory
-import ansible.runner
-import ansible.constants as C
+import cirruscluster.ext.ansible.inventory
+import cirruscluster.ext.ansible.runner
+import cirruscluster.ext.ansible.constants as C
 from ansible import utils
 from ansible import errors
-import ansible.callbacks
+import cirruscluster.ext.ansible.callbacks
 import os
 import shlex
 import collections
@@ -112,7 +112,7 @@ class PlayBook(object):
         self.only_tags        = only_tags
 
         if inventory is None:
-            self.inventory    = ansible.inventory.Inventory(host_list)
+            self.inventory    = cirruscluster.ext.ansible.inventory.Inventory(host_list)
             self.inventory.subset(subset)
         else:
             self.inventory    = inventory
@@ -259,7 +259,7 @@ class PlayBook(object):
         hosts = self._list_available_hosts()
         self.inventory.restrict_to(hosts)
 
-        runner = ansible.runner.Runner(
+        runner = cirruscluster.ext.ansible.runner.Runner(
             pattern=task.play.hosts, inventory=self.inventory, module_name=task.module_name,
             module_args=task.module_args, forks=self.forks,
             remote_pass=self.remote_pass, module_path=self.module_path,
@@ -370,7 +370,7 @@ class PlayBook(object):
         self.inventory.restrict_to(host_list)
 
         # push any variables down to the system
-        setup_results = ansible.runner.Runner(
+        setup_results = cirruscluster.ext.ansible.runner.Runner(
             pattern=play.hosts, module_name='setup', module_args={}, inventory=self.inventory,
             forks=self.forks, module_path=self.module_path, timeout=self.timeout, remote_user=play.remote_user,
             remote_pass=self.remote_pass, remote_port=play.remote_port, private_key_file=self.private_key_file,
