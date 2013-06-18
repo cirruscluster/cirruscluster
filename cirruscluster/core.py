@@ -8,11 +8,10 @@ from cirruscluster.ext.ansible import callbacks
 from cirruscluster.ext.ansible import inventory as ansible_inventory
 from cirruscluster.ext.ansible import playbook
 from cirruscluster.ext.ansible import runner
-#from cirruscluster.ext.ansible import utils
+from cirruscluster.ext.ansible import utils
 #from cirruscluster.ext.ansible.utils import plugins
 import StringIO
 import base64
-#import exceptions
 import logging
 import math
 import multiprocessing
