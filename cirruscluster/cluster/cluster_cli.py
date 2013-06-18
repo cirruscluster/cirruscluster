@@ -23,18 +23,19 @@
 # THE SOFTWARE.
 
 import sys
-from cirrus.cluster import mapr
-from cirrus.cluster import config
-import logging
+from cirruscluster.cluster import mapr
+from cirruscluster.cluster import config
+
 
 def main():  
-  if (len(sys.argv) < 2):    
+  if (len(sys.argv) < 2):
     print 'Usage:'
     print ' urls - Print the urls Web UI'
     print ' create <num_instances> - Launch a cluster with N nodes'
     print ' resize <num_instance> - Resize a cluster to have N nodes'
-    print ' destroy <num_instance> - Shutdown all nodes (warning: all data on maprfs:// is destroyed)'
-    print ' see source for additional experimental commands...'     
+    print ' destroy <num_instance> - Shutdown all nodes' \
+          ' (warning: all data on maprfs:// is destroyed)'
+    print ' see source for additional experimental commands...'
     return 1
   cmd = sys.argv[1]  
   cluster = mapr.MaprCluster(config.GetConfiguration())
@@ -69,10 +70,12 @@ def main():
     property_name = sys.argv[2]
     print cluster.GetProperty(property_name)      
   elif cmd == 'set_map_reduce_slots_per_node':
-    # since hadoop 20.2 has no working capacity scheduler, this hack allows manual reconfiguration of slots per node to indirectly enforce resource guarantees
+    # since hadoop 20.2 has no working capacity scheduler, this hack allows 
+    # manual reconfiguration of slots per node to indirectly enforce 
+    # resource guarantees
     num_slots_map = long(sys.argv[2])
     num_slots_reduce = long(sys.argv[3])
-    assert(cluster.SetNumMapReduceSlotsPerNode(num_slots_map, num_slots_reduce))    
+    assert(cluster.SetNumMapReduceSlotsPerNode(num_slots_map, num_slots_reduce))
   else:
     print 'unknown operation requested: ' + cmd    
     return 1

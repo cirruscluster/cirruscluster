@@ -13,18 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import boto
-from boto.ec2.connection import EC2Connection
-from boto.exception import EC2ResponseError
-import os
-import re
-import subprocess
-import sys
-import time
-import datetime
-import dateutil.parser
-import logging
+from boto import ec2 as boto_ec2
+from boto import exception as boto_exception
+from boto.ec2 import blockdevicemapping
+from boto.ec2 import connection
 from cirruscluster import core
+from dateutil import parser
+import datetime
+import re
+import time
+#from exceptions import RuntimeError
 
 class Instance(object):
   """
@@ -66,18 +64,20 @@ class Ec2Cluster():
   name and the instance's role, e.g. <cluster-name>-<role>
   """
 
-  def __init__(self, name, region_name, aws_access_key_id = None, aws_secret_access_key = None):    
-    #super(Ec2Cluster, self).__init__()
+  def __init__(self, name, region_name, aws_access_key_id = None, 
+               aws_secret_access_key = None):    
     self._name = name
-    regions = boto.ec2.regions()
+    regions = boto_ec2.regions()
     region = None
     for r in regions:
       if r.name == region_name:
         region = r 
         break
     if not region:
-      LOG(FATAL, 'invalid region name: %s' % region_name)  
-    self._ec2Connection = EC2Connection(aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key, region=region)
+      raise RuntimeError('invalid region name: %s' % region_name)  
+    self.ec2 = connection.EC2Connection(aws_access_key_id,
+                                        aws_secret_access_key, 
+                                        region=region)
     return
 
   def authorize_role(self, role, protocol, from_port, to_port, cidr_ip):
@@ -85,16 +85,17 @@ class Ec2Cluster():
     Authorize access to machines in a given role from a given network.
     """
     if (protocol != 'tcp' and protocol != 'udp'):
-      raise Exception('error: expected protocol to be tcp or udp but got %s' % (protocol))
+      raise RuntimeError('error: expected protocol to be tcp or udp '\
+                         'but got %s' % (protocol))
     
     self._check_role_name(role)
     role_group_name = self._group_name_for_role(role)
     # Revoke first to avoid InvalidPermission.Duplicate error
-    self._ec2Connection.revoke_security_group(role_group_name,
+    self.ec2.revoke_security_group(role_group_name,
                                              ip_protocol=protocol,
                                              from_port=from_port,
                                              to_port=to_port, cidr_ip=cidr_ip)
-    self._ec2Connection.authorize_security_group(role_group_name,
+    self.ec2.authorize_security_group(role_group_name,
                                                 ip_protocol=protocol,
                                                 from_port=from_port,
                                                 to_port=to_port,
@@ -123,8 +124,11 @@ class Ec2Cluster():
     self._check_role_name(role)
     instances = []
     
-    for instance in self._get_instances(self._group_name_for_role(role), state_filter):            
-      instances.append(Instance(instance.id, instance.dns_name, instance.private_dns_name, instance.private_ip_address))
+    for instance in self._get_instances(self._group_name_for_role(role), 
+                                       state_filter):            
+      instances.append(Instance(instance.id, instance.dns_name, 
+                                instance.private_dns_name, 
+                                instance.private_ip_address))
       
     return instances
   
@@ -137,8 +141,11 @@ class Ec2Cluster():
     """
 
     instances = []
-    for instance in self._get_instances(self._get_cluster_group_name(), state_filter):
-      instances.append(Instance(instance.id, instance.dns_name, instance.private_dns_name, instance.private_ip_address))
+    for instance in self._get_instances(self._get_cluster_group_name(), 
+                                        state_filter):
+      instances.append(Instance(instance.id, instance.dns_name, 
+                                instance.private_dns_name, 
+                                instance.private_ip_address))
     return instances
 
   def print_status(self, roles=None, state_filter="running"):
@@ -155,14 +162,15 @@ class Ec2Cluster():
                                             state_filter):
           self._print_instance(role, instance)
 
-  def launch_instances(self, role, number, image_id, instance_type, private_key_name, availability_zone):
+  def launch_instances(self, role, number, image_id, instance_type, 
+                       private_key_name, availability_zone):
     self._check_role_name(role)
     self._create_security_groups(role)
       
     user_data = None
     security_groups = self._get_group_names([role]) 
 
-    reservation = self._ec2Connection.run_instances(image_id, min_count=number,
+    reservation = self.ec2.run_instances(image_id, min_count=number,
       max_count=number, key_name=private_key_name,
       security_groups=security_groups, user_data=user_data,
       instance_type=instance_type,
@@ -177,11 +185,11 @@ class Ec2Cluster():
       if (time.time() - start_time >= timeout):
         raise TimeoutException()
       try:
-        reservation = self._ec2Connection.get_all_instances(instance_ids)
+        reservation = self.ec2.get_all_instances(instance_ids)
         if self._all_started(reservation):
           break
       # don't timeout for race condition where instance is not yet registered
-      except EC2ResponseError:
+      except boto_exception.EC2ResponseError:
         pass
       
       num_started = self._number_instances_in_state(reservation, "running")
@@ -190,65 +198,68 @@ class Ec2Cluster():
       time.sleep(15)
     
     instances = []
-    for reservation in self._ec2Connection.get_all_instances(instance_ids):
+    for reservation in self.ec2.get_all_instances(instance_ids):
       for instance in reservation.instances:      
         assert(instance.id)
         assert(len(instance.dns_name) > 4)
         assert(len(instance.private_dns_name) > 4)
         assert(len(instance.private_ip_address) > 4)
-        instances.append(Instance(instance.id, instance.dns_name, instance.private_dns_name, instance.private_ip_address))
+        instances.append(Instance(instance.id, instance.dns_name, 
+                                  instance.private_dns_name, 
+                                  instance.private_ip_address))
     return instances
     
     
-  def CreateBlockDeviceMapForInstanceType(self, image_id, instance_type):
+  def CreateBlockDeviceMap(self, image_id, instance_type):
       """
       If you launch without specifying a manual device block mapping, you may 
       not get all the ephemeral devices available to the given instance type.
-      This will build one that ensures all available ephemeral devices are mapped.      
+      This will build one that ensures all available ephemeral devices are
+      mapped.      
       """
       # get the block device mapping stored with the image
-      image = self._ec2Connection.get_image(image_id)
+      image = self.ec2.get_image(image_id)
       block_device_map = image.block_device_mapping
       assert(block_device_map)
-      # update it to include the ephemeral devices
-      
-      num_ephemeral_drives = 4 # max is 4... is it an error for instances with fewer than 4 ?  see: http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/InstanceStorage.html#StorageOnInstanceTypes
-      ephemeral_device_names = ['/dev/sdb', '/dev/sdc', '/dev/sdd', '/dev/sde' ]      
+      # update it to include the ephemeral devices      
+      # max is 4... is it an error for instances with fewer than 4 ?  
+      # see: http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/
+      # InstanceStorage.html#StorageOnInstanceTypes
+      ephemeral_device_names = ['/dev/sdb', '/dev/sdc', '/dev/sdd', '/dev/sde']
       for i, device_name in enumerate(ephemeral_device_names):
-        block_device_map[device_name] = boto.ec2.blockdevicemapping.BlockDeviceType(ephemeral_name = 'ephemeral%d' % (i))
+        name = 'ephemeral%d' % (i)
+        bdt = blockdevicemapping.BlockDeviceType(ephemeral_name = name)
+        block_device_map[device_name] = bdt
       return block_device_map  
     
   
-  def launch_and_wait_for_demand_instances(self, role, image_id, instance_type, private_key_name, number_zone_list):
+  def launch_and_wait_for_demand_instances(self, role, image_id, instance_type,
+                                           private_key_name, number_zone_list):
     self._check_role_name(role)  
     self._create_security_groups(role)
     security_groups = self._get_group_names([role])    
     spot_instance_request_ids = []
-    
     # placement_group compatible only for HPC class instances
     placement_group = None
     if core.IsHPCInstanceType(instance_type):    
       placement_group = self.get_cluster_placement_group() 
-    
     instance_ids = []  
     for number, availability_zone in number_zone_list:
       print 'request: %d in %s' % (number, availability_zone)
       if number == 0:
         continue
-      
-      block_device_map = self.CreateBlockDeviceMapForInstanceType(image_id, instance_type)
-      
-      reservation = self._ec2Connection.run_instances(image_id,
-                                                      min_count=number,
-                                                      max_count=number,
-                                                      key_name=private_key_name,
-                                                      security_groups=security_groups,
-                                                      user_data=None,
-                                                      instance_type=instance_type,                                                      
-                                                      placement=availability_zone,
-                                                      placement_group = placement_group,
-                                                      block_device_map = block_device_map
-                                                      )      
+      block_device_map = self.CreateBlockDeviceMap(image_id, instance_type)
+      reservation = self.ec2.run_instances(image_id,
+        min_count=number,
+        max_count=number,
+        key_name=private_key_name,
+        security_groups=security_groups,
+        user_data=None,
+        instance_type=instance_type,
+        placement=availability_zone,
+        placement_group = placement_group,
+        block_device_map = block_device_map
+        )      
       ids = [instance.id for instance in reservation.instances]
       instance_ids.extend(ids)      
       
@@ -256,25 +267,23 @@ class Ec2Cluster():
     return instances
     
     
-  def launch_and_wait_for_spot_instances(self, price, role, image_id, instance_type, private_key_name, number_zone_list):    
+  def launch_and_wait_for_spot_instances(self, price, role, image_id, 
+                                         instance_type, private_key_name, 
+                                         number_zone_list):    
     self._check_role_name(role)  
     self._create_security_groups(role)
     security_groups = self._get_group_names([role])    
     spot_instance_request_ids = []
-    
     # placement_group compatible only for HPC class instances
     placement_group = None
     if core.IsHPCInstanceType(instance_type):    
       placement_group = self.get_cluster_placement_group() 
-      
     for number, availability_zone in number_zone_list:
       print 'request: %d in %s' % (number, availability_zone)
       if number == 0:
         continue
-      
-      block_device_map = self.CreateBlockDeviceMapForInstanceType(image_id, instance_type)
-      
-      spot_request = self._ec2Connection.request_spot_instances(price=price,
+      block_device_map = self.CreateBlockDeviceMap(image_id, instance_type)
+      spot_request = self.ec2.request_spot_instances(price=price,
         image_id=image_id,
         count=number, 
         type='one-time', 
@@ -290,54 +299,27 @@ class Ec2Cluster():
         placement_group = placement_group,
         block_device_map = block_device_map)
       spot_instance_request_ids.extend([request.id for request in spot_request])
-      
     instances = self.wait_for_spot_instances(spot_instance_request_ids)
     return instances
 
-#    
-#  def launch_and_wait_for_spot_instances(self, price, role, number, image_id, instance_type, private_key_name, availability_zone):
-#    
-#    roles = [role]
-#    
-#    for role in roles:
-#      self._check_role_name(role)  
-#      self._create_security_groups(role)
-#          
-#    security_groups = self._get_group_names(roles)
-#    
-#    spot_request = self._ec2Connection.request_spot_instances(price=price, image_id=image_id,
-#      count=number, type=None, valid_from=None, valid_until=None,
-#      launch_group='maprcluster-spotstartgroup',
-#      availability_zone_group=availability_zone, # want all in same zone to avoid data transfere cost between availability zones
-#      key_name=private_key_name,
-#      security_groups=security_groups, 
-#      user_data=None,
-#      instance_type=instance_type, 
-#      placement=None)
-#    spot_instance_request_ids = [request.id for request in spot_request]
-#    instance_ids = self.wait_for_spot_instances(spot_instance_request_ids)
-#    return instance_ids
-
- 
  
   def wait_for_spot_instances(self, request_ids, timeout=1200):
     start_time = time.time()
-    
     instance_id_set = set()
-
     print 'waiting for spot requests to be fulfilled'    
     while True:
-      time.sleep(1) # wait for the request that was created to become live (reduces chance of race condition occuring)
+      time.sleep(1)
+      # wait for the request that was created to become live
       try:
-        for request in self._ec2Connection.get_all_spot_instance_requests(request_ids): # this can raise an exception because of race condition mentioned above
-          CHECK_NE(request.state, 'failed', ' %s' % request.fault)
-          CHECK_NE(request.status, 'bad-parameters', '%s' % request.fault)          
+        # this can raise an exception because of race condition
+        for request in self.ec2.get_all_spot_instance_requests(request_ids): 
+          if request.state == 'failed' or request.state == 'bad-parameters':
+            raise RuntimeError(request.fault)                    
           if request.instance_id:
             print 'request.instance_id %s' % request.instance_id
             instance_id_set.add(request.instance_id)
       except:
-        logging.info( '...')
-        pass      
+        pass
       num_fulfilled = len(instance_id_set) 
       num_requested = len(request_ids)
       if num_fulfilled == num_requested:
@@ -350,17 +332,17 @@ class Ec2Cluster():
     print 'waiting for spot instances to start'
     while True:
       try:        
-        if self._none_pending(self._ec2Connection.get_all_instances(instance_ids)):
+        if self._none_pending(self.ec2.get_all_instances(instance_ids)):
           break
        # don't timeout for race condition where instance is not yet registered
-      except EC2ResponseError as e:
+      except boto_exception.EC2ResponseError as e:
         print e
       
       instances = None
       try:        
-        instances = self._ec2Connection.get_all_instances(instance_ids)
+        instances = self.ec2.get_all_instances(instance_ids)
        # don't timeout for race condition where instance is not yet registered
-      except EC2ResponseError as e:
+      except boto_exception.EC2ResponseError as e:
         print e
         continue
             
@@ -370,103 +352,82 @@ class Ec2Cluster():
       time.sleep(15)      
       
     instances = []
-    for reservation in self._ec2Connection.get_all_instances(instance_ids):
+    for reservation in self.ec2.get_all_instances(instance_ids):
       for instance in reservation.instances:      
         assert(instance.id)
         assert(len(instance.dns_name) > 4)
         assert(len(instance.private_dns_name) > 4)
         assert(len(instance.private_ip_address) > 4)
-        instances.append(Instance(instance.id, instance.dns_name, instance.private_dns_name, instance.private_ip_address))
+        instances.append(Instance(instance.id, instance.dns_name, 
+                                  instance.private_dns_name, 
+                                  instance.private_ip_address))
     return instances  
-      
- 
- 
-
-  def get_current_spot_instance_price(self, instance_type, availability_zone):    
-    hist = self._ec2Connection.get_spot_price_history(start_time=None, end_time=None, instance_type=instance_type, product_description='Linux/UNIX', availability_zone=availability_zone)    
     
+  def get_current_spot_instance_price(self, instance_type, availability_zone):
+    hist = self.ec.get_spot_price_history(start_time=None, 
+                                          end_time=None, 
+                                          instance_type=instance_type,
+                                          product_description='Linux/UNIX',
+                                          availability_zone=availability_zone)
     if not hist:
-      raise RuntimeError('The requested instance type is not available in this zone. (instance type: %s, zone: %s) Use the AWS console to find the right zone/instance type combo.' % (instance_type, availability_zone))
-    
-    # The API doesn't always return history data in sorted order... so sort it increasing by time
-    time_format = ''
+      raise RuntimeError('The requested instance type is not available in ' 
+                         'this zone. (instance type: %s, zone: %s) Use the '
+                         'AWS console to find the right zone/instance type '
+                         'combo.' % (instance_type, availability_zone))
+    # The API doesn't always return history data in sorted order... 
+    # so sort it increasing by time
     for h in hist:   
-      #h.timestamp = time.strptime(time_format, h.timestamp)
-      h.datetime = datecore.parser.parse(h.timestamp)      
+      h.datetime = parser.parse(h.timestamp)      
     hist.sort(key = lambda v : v.datetime)  
-      
-    #for h in hist:  
-    #  print '%s %s' % (h.price, h.datetime) 
-    
     # grab the most recent price
     cur_price = hist[-1].price
     return cur_price
   
-  def get_recent_max_spot_instance_price(self, instance_type, availability_zone, num_days = 5):    
+  def get_recent_max_spot_instance_price(self, instance_type, availability_zone,
+                                         num_days = 5):    
     end_time  = datetime.datetime.utcnow()
     start_time  = end_time - datetime.timedelta(num_days) # last num_days days
-    
-    #print start_time.isoformat()
-    #print end_time.isoformat()
-    
-    hist = self._ec2Connection.get_spot_price_history(start_time=start_time.isoformat(), end_time=end_time.isoformat(), instance_type=instance_type, product_description='Linux/UNIX', availability_zone=availability_zone)    
+    hist = self.ec2.get_spot_price_history(
+      start_time=start_time.isoformat(), end_time=end_time.isoformat(), 
+      instance_type=instance_type, product_description='Linux/UNIX', 
+      availability_zone=availability_zone)    
     assert(hist)
     max_price = 0
     for h in hist:      
       max_price = max(max_price, h.price)
-    
     return max_price
-
       
   def terminate_all_instances(self):
     instances = self._get_instances(self._get_cluster_group_name(), "running")
     if instances:
-      self._ec2Connection.terminate_instances([i.id for i in instances])
-
+      self.ec2.terminate_instances([i.id for i in instances])
     #cleanup security groups
     self._delete_security_groups()
     return
 
   def terminate_instances(self, instances):    
     if instances:
-      self._ec2Connection.terminate_instances([i.id for i in instances])
-
+      self.ec2.terminate_instances([i.id for i in instances])
     #cleanup security groups
     #self._delete_security_groups()
     return
-  
-#   def get_cluster_placement_group(self):
-#     """
-#     Return the placement group, create it if it doesn't yet exist. (needed for cluster type instances).
-#     """
-#     placement_group_name = 'pg-%s' % (self._name)
-#     matching_placement_groups = self._ec2Connection.get_all_placement_groups(groupnames=[placement_group_name])
-#     placement_group = None
-#     if matching_placement_groups:
-#       CHECK_EQ(len(matching_placement_groups), 1)
-#       placement_group = matching_placement_groups[0] 
-#     else:
-#        assert(self._ec2Connection.create_placement_group(placement_group_name, strategy = 'cluster'), 'could not create placement group: %s' % (placement_group_name) )     
-#     return placement_group_name
 
   def get_cluster_placement_group(self):
     """
-    Return the placement group, create it if it doesn't yet exist. (needed for cluster type instances).
+    Return the placement group, create it if it doesn't yet exist. 
+    (needed for cluster type instances).
     """
     placement_group_name = 'pg-%s' % (self._name)
-    
     try:
-      self._ec2Connection.create_placement_group(placement_group_name, strategy = 'cluster'), 'could not create placement group: %s' % (placement_group_name)
+      self.ec2.create_placement_group(placement_group_name, 
+                                                 strategy = 'cluster')
     except:
       pass
-        
     return placement_group_name
     
-
 # ************************************************************************
 # PRIVATE  
 # ************************************************************************
-
 
   def _get_cluster_group_name(self):
     return self._name
@@ -489,7 +450,7 @@ class Ec2Cluster():
     return group_names
 
   def _get_all_group_names(self):
-    security_groups = self._ec2Connection.get_all_security_groups()
+    security_groups = self.ec2.get_all_security_groups()
     security_group_names = \
       [security_group.name for security_group in security_groups]
     return security_group_names
@@ -514,19 +475,19 @@ class Ec2Cluster():
 
     cluster_group_name = self._get_cluster_group_name()
     if not cluster_group_name in security_group_names:
-      self._ec2Connection.create_security_group(cluster_group_name,
+      self.ec2.create_security_group(cluster_group_name,
                                                "Cluster (%s)" % (self._name))
-      self._ec2Connection.authorize_security_group(cluster_group_name,
+      self.ec2.authorize_security_group(cluster_group_name,
                                                   cluster_group_name)
       # Allow SSH from anywhere
-      self._ec2Connection.authorize_security_group(cluster_group_name,
+      self.ec2.authorize_security_group(cluster_group_name,
                                                   ip_protocol="tcp",
                                                   from_port=22, to_port=22,
                                                   cidr_ip="0.0.0.0/0")
 
     role_group_name = self._group_name_for_role(role)
     if not role_group_name in security_group_names:
-      self._ec2Connection.create_security_group(role_group_name,
+      self.ec2.create_security_group(role_group_name,
         "Role %s (%s)" % (role, self._name))
     return
   
@@ -537,7 +498,7 @@ class Ec2Cluster():
     """
     group_names = self._get_all_group_names_for_cluster()
     for group in group_names:
-      self._ec2Connection.delete_security_group(group)
+      self.ec2.delete_security_group(group)
   
   def _get_instances(self, group_name, state_filter=None):
     """
@@ -547,13 +508,13 @@ class Ec2Cluster():
     @param state_filter: the state that the instance should be in
       (e.g. "running"), or None for all states
     """
-    all_instances = self._ec2Connection.get_all_instances()
+    all_instances = self.ec2.get_all_instances()
     instances = []
     for res in all_instances:
       for group in res.groups:
         if group.name == group_name:
           for instance in res.instances:            
-            if state_filter == None or instance.state == state_filter:              
+            if state_filter == None or instance.state == state_filter:
               instances.append(instance)    
     return instances
 

@@ -22,18 +22,15 @@
 
 """ Automates connecting and managing a remote Cirrus Workstation in EC2. """
 
-import logging
+from boto.ec2 import connection as ec2_connection 
+from boto.iam import connection as iam_connection
+from boto.s3 import connection as s3_connection
 from cirruscluster import core
-from string import Template
-import time
+import pkg_resources 
+import string
 import hashlib
-import boto
-from boto.iam.connection import IAMConnection
-from boto.ec2.connection import EC2Connection
-from boto.s3.connection import S3Connection
-from boto.exception import  BotoServerError
-from boto.s3.key import Key
-import os
+import logging
+import time
 
 workstation_profile = 'cirrus_workstation_profile'
 
@@ -42,8 +39,7 @@ def IAMUserReady(iam_aws_id, iam_aws_secret):
   ready = False
   if iam_aws_id and iam_aws_secret:
     try:
-      s3 = S3Connection(aws_access_key_id=iam_aws_id, 
-                        aws_secret_access_key=iam_aws_secret)
+      _ = s3_connection.S3Connection(iam_aws_id, iam_aws_secret)
       ready = True
     except:
       logging.info( 'failed to connect as user: %s' % (iam_aws_id))
@@ -52,19 +48,18 @@ def IAMUserReady(iam_aws_id, iam_aws_secret):
 
 
 def InitCirrusIAMUser(root_aws_id, root_aws_secret):
-  """ Given a user's root aws credentials, setup the IAM user environment that
-      can be used later for all future api actions.
+  """ Configure cirrus IAM user.
+  Given a user's root aws credentials, setup the IAM user environment that
+  can be used later for all future api actions.
   """
-  iam = IAMConnection(aws_access_key_id=root_aws_id,
-                      aws_secret_access_key=root_aws_secret)
-  s3 = S3Connection(aws_access_key_id=root_aws_id, 
-                    aws_secret_access_key=root_aws_secret)
+  iam = iam_connection.IAMConnection(root_aws_id, root_aws_secret)
+  s3 = s3_connection.S3Connection(root_aws_id, root_aws_secret)
   cirrus_iam_username = 'cirrus'
   bucketname = 'cirrus_iam_config_%s' % (hashlib.md5(root_aws_id).hexdigest())
   has_cirrus_user = False
   response = iam.get_all_users()
   for user in response['list_users_response']['list_users_result']['users']:
-    logging.info( 'iam user exists')
+    logging.info( 'iam user exists: %s' % user)
     has_cirrus_user = True
   if not has_cirrus_user:
     logging.info( 'creating iam user')
@@ -110,7 +105,8 @@ def InitCirrusIAMUser(root_aws_id, root_aws_secret):
     assert(workstation_role_arn)
     iam.add_role_to_instance_profile(workstation_profile, role_name)
     iam.put_role_policy(role_name, 'power_user_policy', power_user_policy_json)
-    # update iam user to have right to launch instances with the cirrus_workstatio_role
+    # update iam user to have right to launch instances with the 
+    # cirrus_workstatio_role
     policy_json = '{"Version": "2012-10-17", ' \
                   '"Statement": [{"Effect": "Allow", "Action":"iam:PassRole",' \
                   ' "Resource": "%s"}]}' % (workstation_role_arn)
@@ -140,15 +136,19 @@ def InitCirrusIAMUser(root_aws_id, root_aws_secret):
 
   # part of the credentials is unknown, so make new ones and store those
   if not iam_id or not iam_secret:
-    logging.info( 'creating new aws credentials for IAM user %s.' % cirrus_iam_username)
+    logging.info('Creating new aws credentials for IAM user %s.'\
+                  % cirrus_iam_username)
     response = iam.create_access_key(cirrus_iam_username)
-    new_key = response['create_access_key_response']['create_access_key_result']['access_key']
+    new_key = response['create_access_key_response']\
+                      ['create_access_key_result']\
+                      ['access_key']
     iam_id = new_key['access_key_id']
     assert(iam_id)
     iam_secret = new_key['secret_access_key']
-    cirrus_cred_bucket_key = 'cirrus_iam_sec_%s' % (hashlib.md5(iam_id).hexdigest())
+    iam_hash = hashlib.md5(iam_id).hexdigest()
+    cirrus_cred_bucket_key = 'cirrus_iam_sec_%s' % (iam_hash)
     #store secret in s3 for future use
-    k = Key(cred_bucket)
+    k = key.Key(cred_bucket)
     k.key = cirrus_cred_bucket_key
     k.set_contents_from_string(iam_secret)
   return iam_id, iam_secret
@@ -161,12 +161,10 @@ class Manager(object):
     self.region_name = region_name
     self.iam_aws_id = iam_aws_id
     self.iam_aws_secret = iam_aws_secret
-    self.ec2 = EC2Connection(region = core.GetRegion(region_name), 
-                             aws_access_key_id=iam_aws_id, 
-                             aws_secret_access_key=iam_aws_secret)
-    self.s3 = S3Connection(aws_access_key_id=iam_aws_id, 
-                           aws_secret_access_key=iam_aws_secret)
-    self.scripts_dir = os.path.dirname(__file__) + '/scripts/'
+    region = core.GetRegion(region_name)
+    self.ec2 = ec2_connection.EC2Connection(iam_aws_id, iam_aws_secret,
+                                            region = region)
+    self.s3 = s3_connection.S3Connection(iam_aws_id, iam_aws_secret)
     self.workstation_tag = 'cirrus_workstation'
     self.workstation_keypair_name = 'cirrus_workstation'
     self.ssh_key = None
@@ -176,7 +174,7 @@ class Manager(object):
     dst_regions = core.tested_region_names
     self.ssh_key = core.InitKeypair(self.ec2, self.s3, config_bucketname, 
                                     self.workstation_keypair_name, src_region,
-                                    dst_regions, iam_aws_id, iam_aws_secret)
+                                    dst_regions)
     return
 
   def Debug(self):
@@ -212,10 +210,11 @@ class Manager(object):
       return
 
   def CreateInstance(self, workstation_name, instance_type, ubuntu_release_name,
-                     mapr_version, ami_owner_id = '925479793144'):
+                     mapr_version, ami_release_name, ami_owner_id):
     role = 'workstation'
     ami = core.LookupCirrusAmi(self.ec2, instance_type, ubuntu_release_name,
-                               mapr_version, role, ami_owner_id)
+                               mapr_version, role, ami_release_name, 
+                               ami_owner_id)
     if not ami:
       raise RuntimeError('Failed to find a suitable ami')
     self.__CreateWorkstationSecurityGroup() # ensure the security group exists
@@ -231,10 +230,10 @@ class Manager(object):
        instance_initiated_shutdown_behavior = 'stop',
        instance_profile_name = workstation_profile # IAM instance profile 
        )
-    CHECK_EQ(len(reservation.instances), 1)
+    assert(len(reservation.instances) == 1)
     instance = reservation.instances[0]
     instance.add_tag(self.workstation_tag, 'true')
-    instance.add_tag('Name', workstation_name) # this shows up the AWS management console
+    instance.add_tag('Name', workstation_name) # shown in AWS management console
     core.WaitForInstanceRunning(instance)
     core.WaitForInstanceReachable(instance, self.ssh_key)
     return
@@ -245,8 +244,9 @@ class Manager(object):
 
   def ResizeRootVolumeOfInstance(self, instance_id, new_vol_size_gb):
     # check inputs are valid
-    CHECK_GE(new_vol_size_gb, 1)
-    CHECK_LE(new_vol_size_gb, 500) # probably spending too much if you go bigger than this!
+    assert(new_vol_size_gb >= 1)
+    if new_vol_size_gb > 1000: # probably spending too much if you go bigger
+      raise RuntimeError('Adding volumes this large has not been tested.')
     instance = self.__GetInstanceById(instance_id)
     assert(instance)
     # get info about current ebs root volume
@@ -260,43 +260,44 @@ class Manager(object):
     orig_root_volume_id = str(root_block_map.volume_id)
     logging.info( 'orig_root_volume_id: %s' % (orig_root_volume_id))
     orig_root_volume_termination_setting = root_block_map.delete_on_termination
-    logging.info( 'orig_root_volume_termination_setting: %s' % (orig_root_volume_termination_setting))
+    logging.info( 'orig_root_volume_termination_setting: %s'\
+                  % (orig_root_volume_termination_setting))
     vols = self.ec2.get_all_volumes([orig_root_volume_id])
-    CHECK_EQ(len(vols), 1)
+    assert(len(vols) >= 1)
     orig_root_volume = vols[0]
     orig_root_volume_size = orig_root_volume.size
     logging.info( 'orig_root_volume_size: %s' % (orig_root_volume_size))
     orig_root_volume_zone = str(orig_root_volume.zone)
     assert(orig_root_volume_zone)
     logging.info( 'orig_root_volume_zone: %s' % (orig_root_volume_zone))
-    CHECK_EQ(instance.root_device_type, 'ebs')
-    CHECK_GE(new_vol_size_gb, orig_root_volume_size ,'only increasing size has been tested so far...')
+    assert(instance.root_device_type == 'ebs')
+    if new_vol_size_gb < orig_root_volume_size:
+      raise RuntimeError('You asked to decrease root vol size.  ' \
+        'Only increasing volume size is currently tested and supported.')
     # stop the instance
     # if not stopped, stop the instance
     if core.GetInstanceState(instance) != 'stopped':
-        self.ec2.stop_instances([instance_id])
-        logging.info( 'stopping instance')
-        core.WaitForInstanceStopped(instance)
+      self.ec2.stop_instances([instance_id])
+      logging.info( 'stopping instance')
+      core.WaitForInstanceStopped(instance)
     logging.info( 'Instance is stopped')
-
     # if volume not detached, detach it
     if root_block_map.status != 'detached':
-        logging.info( 'root_block_map.status: %s' % (root_block_map.status))
-        logging.info( 'detaching root volume')
-        self.ec2.detach_volume(orig_root_volume_id, instance_id, root_device_name)
-        core.WaitForVolumeAvailable(orig_root_volume)
+      logging.info( 'root_block_map.status: %s' % (root_block_map.status))
+      logging.info( 'detaching root volume')
+      self.ec2.detach_volume(orig_root_volume_id, instance_id, 
+                             root_device_name)
+      core.WaitForVolumeAvailable(orig_root_volume)
     logging.info( 'Root volume is detached')
-
     # Create a snapshot
-    snapshot = self.ec2.create_snapshot(orig_root_volume_id, 'temporary snapshot of root vol for resize')
+    name =   'temporary snapshot of root vol for resize'
+    snapshot = self.ec2.create_snapshot(orig_root_volume_id, name)
     core.WaitForSnapshotCompleted(snapshot)
-
     # Create a new larger volume from the snapshot
-    #new_volume = snapshot.create_volume(orig_root_volume_zone, size=new_vol_size_gb)
-
-    new_volume = self.ec2.create_volume(new_vol_size_gb, orig_root_volume_zone, snapshot = snapshot)
+    new_volume = self.ec2.create_volume(new_vol_size_gb, 
+                                        orig_root_volume_zone,
+                                        snapshot = snapshot)
     core.WaitForVolumeAvailable(new_volume)
-
     # Attach the new volume as the root device
     new_volume.attach(instance_id, '/dev/sda1')
     core.WaitForVolumeAttached(new_volume)
@@ -304,222 +305,222 @@ class Manager(object):
     # TODO delete the old root volume and the temporary snapshot
     logging.info( 'you should delete this snapshot: %s' % (snapshot))
     logging.info( 'you should delete this volume: %s' % (orig_root_volume_id))
-
     return
 
   def AddNewVolumeToInstance(self, instance_id, vol_size_gb):
-      CHECK_GE(vol_size_gb, 1)
-      CHECK_LE(vol_size_gb, 500) # probably spending too much if you go bigger than this!
-      instance = self.__GetInstanceById(instance_id)
-      assert(instance)
+    """ Returns the volume id added... mount point is /mnt/vol-<id>/. """
+    assert(vol_size_gb >= 1)
+    if vol_size_gb > 1000: # probably spending too much if you go bigger
+      raise RuntimeError('Adding volumes this large has not been tested.')
+    instance = self.__GetInstanceById(instance_id)
+    assert(instance)
 
-      # select an unused device
-      # see http://askubuntu.com/questions/47617/how-to-attach-new-ebs-volume-to-ubuntu-machine-on-aws
-      potential_device_names = ['/dev/xvdf', '/dev/xvdg', '/dev/xvdh', '/dev/xvdi']
-      device_name = None
-
-      for name in potential_device_names:
-          if not self.DeviceExists(name, instance):
-              device_name = name
-              break
-
-      CHECK_NE(device_name, None, 'No suitable device names available')
-
-      # Attach volume
-      volume = self.ec2.create_volume(vol_size_gb, instance.placement)
-      volume.attach(instance.id, device_name)
-
-      # wait for volume to attach
-      core.WaitForVolumeAttached(volume)
-
-      while not self.DeviceExists(device_name, instance):
-          logging.info( 'waiting for device to be attached...')
-          time.sleep(5)
-
-      assert(volume.id)
-      CHECK_EQ(volume.attach_data.device, device_name)
-
-      # format file system, mount the file system, update fstab to automount
-      hostname = instance.dns_name
-      add_ebs_volume_playbook = os.path.dirname(__file__) + '/playbooks/add_ebs_volume.yml'
-
-      extra_vars = {}
-      extra_vars['volume_name'] = volume.id
-      extra_vars['volume_device'] = device_name
-      assert(core.RunPlaybookOnHost(add_ebs_volume_playbook, hostname, self.ssh_key, extra_vars))
-      return
-
+    # select an unused device
+    # see http://askubuntu.com/questions/47617/
+    # how-to-attach-new-ebs-volume-to-ubuntu-machine-on-aws
+    potential_device_names = ['/dev/xvdf',
+                              '/dev/xvdg',
+                              '/dev/xvdh', 
+                              '/dev/xvdi']
+    device_name = None
+    for name in potential_device_names:
+      if not self.DeviceExists(name, instance):
+        device_name = name
+        break
+    if not device_name:
+      raise RuntimeError('No suitable device names available')
+    # Attach volume
+    volume = self.ec2.create_volume(vol_size_gb, instance.placement)
+    volume.attach(instance.id, device_name)
+    # wait for volume to attach
+    core.WaitForVolumeAttached(volume)
+    while not self.DeviceExists(device_name, instance):
+        logging.info( 'waiting for device to be attached...')
+        time.sleep(5)
+    assert(volume.id)
+    assert(volume.attach_data.device == device_name)
+    # format file system, mount the file system, update fstab to automount
+    hostname = instance.dns_name
+    add_ebs_volume_playbook = pkg_resources.resource_filename(__name__,
+      'ami/playbooks/workstation/add_ebs_volume.yml')
+    extra_vars = {}
+    extra_vars['volume_name'] = volume.id
+    extra_vars['volume_device'] = device_name
+    assert(core.RunPlaybookOnHost(add_ebs_volume_playbook, hostname, 
+                                  self.ssh_key, extra_vars))      
+    return volume.id
 
   def CreateRemoteSessionConfig(self, instance_id):
-      instance = self.__GetInstanceById(instance_id)
-      if instance.state != 'running':
-          instance.start()
-          core.WaitForInstanceRunning(instance)
-          core.WaitForHostsReachable([instance.public_dns_name], self.ssh_key)
-      nx_key = core.ReadRemoteFile('/usr/NX/share/keys/default.id_dsa.key', instance.public_dns_name, self.ssh_key)
-      assert(nx_key)
-      CHECK_EQ(instance.state, 'running')
-      config_content = Template(GetNxsTemplate()).substitute({'public_dns_name' : instance.public_dns_name, 'nx_key' : nx_key})
-
-
-      # TODO(heathkh): Once this operation is performed at ami creatio ntime, this shouldn't be needed at login time
-      rm_nx_known_hosts = 'sudo rm /usr/NX/home/nx/.ssh/known_hosts'
-      core.RunCommandOnHost(rm_nx_known_hosts, instance.public_dns_name, self.ssh_key)
-      return config_content
-
+    instance = self.__GetInstanceById(instance_id)
+    if instance.state != 'running':
+      instance.start()
+      core.WaitForInstanceRunning(instance)
+      core.WaitForHostsReachable([instance.public_dns_name], self.ssh_key)
+    nx_key = core.ReadRemoteFile('/usr/NX/share/keys/default.id_dsa.key',
+                                  instance.public_dns_name, self.ssh_key)
+    assert(nx_key)
+    assert(instance.state == 'running')
+    params = {'public_dns_name' : instance.public_dns_name, 'nx_key' : nx_key}
+    config_content = string.Template(GetNxsTemplate()).substitute(params)
+    # TODO(heathkh): Once this operation is performed at ami creatio ntime, 
+    # this shouldn't be needed at login time
+    rm_nx_known_hosts = 'sudo rm /usr/NX/home/nx/.ssh/known_hosts'
+    core.RunCommandOnHost(rm_nx_known_hosts, instance.public_dns_name, 
+                          self.ssh_key)
+    return config_content
 
   def __GetInstanceById(self, id):
-      instances = self.__GetInstances()
-      desired_instance = None
-      for instance in instances:
-          if instance.id == id:
-              desired_instance = instance
-              break
-      return desired_instance
-
+    instances = self.__GetInstances()
+    desired_instance = None
+    for instance in instances:
+      if instance.id == id:
+        desired_instance = instance
+        break
+    return desired_instance
 
   def __GetInstances(self, group_name = None, state_filter=None):
-      """
-      Get all the instances in a group, filtered by state.
+    """
+    Get all the instances in a group, filtered by state.
 
-      @param group_name: the name of the group
-      @param state_filter: the state that the instance should be in
-        (e.g. "running"), or None for all states
-      """
-      all_instances = self.ec2.get_all_instances()
-      instances = []
-      for res in all_instances:
-          for group in res.groups:
-              if group_name and group.name != group_name:
-                  continue
-              for instance in res.instances:
-                  if state_filter == None or instance.state == state_filter:
-                      instances.append(instance)
-      return instances
+    @param group_name: the name of the group
+    @param state_filter: the state that the instance should be in
+      (e.g. "running"), or None for all states
+    """
+    all_instances = self.ec2.get_all_instances()
+    instances = []
+    for res in all_instances:
+      for group in res.groups:
+        if group_name and group.name != group_name:
+          continue
+        for instance in res.instances:
+          if state_filter == None or instance.state == state_filter:
+            instances.append(instance)
+    return instances
 
   def __CreateWorkstationSecurityGroup(self):
-      group_name = core.workstation_security_group
-      group = None
-      try:
-          groups = self.ec2.get_all_security_groups([group_name])
-          CHECK_EQ(len(groups), 1)
-          group = groups[0]
-      except:
-          pass
-      if not group:
-          group = self.ec2.create_security_group(group_name, 'Group for development workstations')
-          # allow ssh connection to this group from anywhere
-          group.authorize('tcp', 22, 22, '0.0.0.0/0')
-      return
+    group_name = core.workstation_security_group
+    group = None
+    try:
+      groups = self.ec2.get_all_security_groups([group_name])
+      assert(len(groups) == 1)
+      group = groups[0]
+    except:
+      pass
+    if not group:
+      group_desc = 'Group for development workstations'
+      group = self.ec2.create_security_group(group_name, group_desc)
+      # allow ssh connection to this group from anywhere
+      group.authorize('tcp', 22, 22, '0.0.0.0/0')
+    return
 
+ 
+#   def LaunchSpotFromSnapshot(self, snapshot_id):
+#     name = 'clone of %s' % (snapshot_id)
+#     description = name
+#     root_device_name = '/dev/sda1'
+#     block_device_map = BlockDeviceMapping()
+#     bdt = BlockDeviceType(snapshot_id=snapshot_id, 
+#                           delete_on_termination=False)
+#     block_device_map[root_device_name] = bdt
+#     architecture = 'x86_64'
+#     kernel_id = 'aki-9ba0f1de'
+#     new_ami_id = self.ec2.register_image(name=name, description=description,
+#                                          architecture=architecture, 
+#                                          kernel_id=kernel_id, 
+#                                          block_device_map=block_device_map, 
+#                                          root_device_name=root_device_name )
+#     price = 0.5
+#     role = 'test-cluster'
+#     instance_type = 'c1.xlarge'
+#     availability_zone = self.ec2_region_name + 'a'
+#     private_key_name = 'west_kp1'
+#     group_names = ['test-cluster']
+#     security_groups = self.ec2.get_all_security_groups(groupnames=group_names)
+#     spot_instances = self._LaunchSpotInstances(price, security_groups, 
+#                                                new_ami_id, kernel_id, 
+#                                                instance_type, 
+#                                                availability_zone,
+#                                                private_key_name)
+#     new_instance = spot_instances[0]
+#     self.LaunchRemoteSession(new_instance.id)
+#     return
+# 
+# 
+#   def _LaunchSpotInstances(self, price, security_groups, image_id, kernel_id,
+#                            instance_type, availability_zone, 
+#                            private_key_name):
+#     spot_instance_request_ids = []
+#     spot_request = self.ec2.request_spot_instances(price=price,
+#       image_id=image_id,
+#       count=1,
+#       type='one-time',
+#       valid_from=None,
+#       valid_until=None,
+#       launch_group=None, #'maprcluster-spotstartgroup',
+#       availability_zone_group=None, #availability_zone,
+#       key_name=private_key_name,
+#       security_groups=security_groups,
+#       user_data=None,
+#       instance_type=instance_type,
+#       placement=availability_zone)
+#     spot_instance_request_ids.extend([request.id for request in spot_request])
+#     instances = self._WaitForSpotInstances(spot_instance_request_ids)
+#     return instances
+# 
+#   def _WaitForSpotInstances(self, request_ids, timeout=1200):
+#     start_time = time.time()
+#     instance_id_set = set()
+#     print 'waiting for spot requests to be fulfilled'
+#     while True:
+#       for request in self.ec2.get_all_spot_instance_requests(request_ids):
+#         #print request
+#         #print dir(request)
+#         if request.instance_id:
+#           print 'request.instance_id %s' % request.instance_id
+#           instance_id_set.add(request.instance_id)
+#       num_fulfilled = len(instance_id_set)
+#       num_requested = len(request_ids)
+# 
+#       if num_fulfilled == num_requested:
+#         break
+# 
+#       print 'fulfilled %d of %d' % (num_fulfilled, num_requested)
+#       time.sleep(15)
+# 
+#     instance_ids = [id for id in instance_id_set]
+# 
+#     time.sleep(5)
+#     print 'waiting for spot instances to start'
+#     while True:
+# 
+#       try:
+#         if NonePending(self.ec2.get_all_instances(instance_ids)):
+#           break
+#        # don't timeout for race condition where instance is not yet registered
+#       except EC2ResponseError as e:
+#         print e
+# 
+# 
+#       instances = None
+#       try:
+#         instances = self.ec2.get_all_instances(instance_ids)
+#        # don't timeout for race condition where instance is not yet registered
+#       except EC2ResponseError as e:
+#         print e
+#         continue
+# 
+#       num_started = NumberInstancesInState(instances, "running")
+#       num_pending = NumberInstancesInState(instances, "pending")
+#       print 'started: %d pending: %d' % (num_started, num_pending)
+# 
+#       time.sleep(15)
+# 
+#     instances = []
+#     for reservation in self.ec2.get_all_instances(instance_ids):
+#       for instance in reservation.instances:
+#         instances.append(instance)
+#     return instances
 
-#  def LaunchSpotFromSnapshot(self, snapshot_id):
-#
-#    name = 'clone of %s' % (snapshot_id)
-#    description = name
-#
-#    root_device_name = '/dev/sda1'
-#    block_device_map = BlockDeviceMapping()
-#    block_device_map[root_device_name] = BlockDeviceType(snapshot_id=snapshot_id, delete_on_termination=False)
-#    architecture = 'x86_64'
-#    kernel_id = 'aki-9ba0f1de'
-#    new_ami_id = self.ec2.register_image(name=name, description=description, architecture=architecture, kernel_id=kernel_id, block_device_map=block_device_map, root_device_name=root_device_name )
-#
-#    price = 0.5
-#    role = 'test-cluster'
-#    instance_type = 'c1.xlarge'
-#    availability_zone = self.ec2_region_name + 'a'
-#    private_key_name = 'west_kp1'
-#    security_groups = self.ec2.get_all_security_groups(groupnames=['test-cluster'])
-#
-#    spot_instances = self._LaunchSpotInstances(price, security_groups, new_ami_id, kernel_id, instance_type, availability_zone, private_key_name)
-#
-#    new_instance = spot_instances[0]
-#
-#    self.LaunchRemoteSession(new_instance.id)
-#
-#    return
-
-#
-#
-#  def _LaunchSpotInstances(self, price, security_groups, image_id, kernel_id, instance_type, availability_zone, private_key_name):
-#
-#    spot_instance_request_ids = []
-#
-#    spot_request = self.ec2.request_spot_instances(price=price,
-#      image_id=image_id,
-#      count=1,
-#      type='one-time',
-#      valid_from=None,
-#      valid_until=None,
-#      launch_group=None, #'maprcluster-spotstartgroup',
-#      availability_zone_group=None, #availability_zone,
-#      key_name=private_key_name,
-#      security_groups=security_groups,
-#      user_data=None,
-#      instance_type=instance_type,
-#      placement=availability_zone)
-#    spot_instance_request_ids.extend([request.id for request in spot_request])
-#    instances = self._WaitForSpotInstances(spot_instance_request_ids)
-#    return instances
-#
-#
-
-#  def _WaitForSpotInstances(self, request_ids, timeout=1200):
-#    start_time = time.time()
-#    instance_id_set = set()
-#
-#    print 'waiting for spot requests to be fulfilled'
-#    while True:
-#      for request in self.ec2.get_all_spot_instance_requests(request_ids):
-#        #print request
-#        #print dir(request)
-#        if request.instance_id:
-#          print 'request.instance_id %s' % request.instance_id
-#          instance_id_set.add(request.instance_id)
-#      num_fulfilled = len(instance_id_set)
-#      num_requested = len(request_ids)
-#
-#      if num_fulfilled == num_requested:
-#        break
-#
-#      print 'fulfilled %d of %d' % (num_fulfilled, num_requested)
-#      time.sleep(15)
-#
-#    instance_ids = [id for id in instance_id_set]
-#
-#    time.sleep(5)
-#    print 'waiting for spot instances to start'
-#    while True:
-#
-#      try:
-#        if NonePending(self.ec2.get_all_instances(instance_ids)):
-#          break
-#       # don't timeout for race condition where instance is not yet registered
-#      except EC2ResponseError as e:
-#        print e
-#
-#
-#      instances = None
-#      try:
-#        instances = self.ec2.get_all_instances(instance_ids)
-#       # don't timeout for race condition where instance is not yet registered
-#      except EC2ResponseError as e:
-#        print e
-#        continue
-#
-#      num_started = NumberInstancesInState(instances, "running")
-#      num_pending = NumberInstancesInState(instances, "pending")
-#      print 'started: %d pending: %d' % (num_started, num_pending)
-#
-#      time.sleep(15)
-#
-#    instances = []
-#    for reservation in self.ec2.get_all_instances(instance_ids):
-#      for instance in reservation.instances:
-#        instances.append(instance)
-#    return instances
-#
 
 
 def GetNxsTemplate():

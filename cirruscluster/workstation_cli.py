@@ -5,6 +5,8 @@ from cirruscluster import workstation
 import ConfigParser
 import os
 import sys
+import platform
+import tempfile
 
 class Cli(object):
   """ CLI for operations on Cirrus workstations."""
@@ -15,7 +17,9 @@ class Cli(object):
     self.instance_type = None
     self.ubuntu_release_name = None
     self.mapr_version = None
-    self.config_filename = os.path.expanduser('~/.cirrus-workstation')
+    self.ami_release_name = None
+    self.ami_owner_id = None
+    self.config_filename = os.path.expanduser('~/.cirrus-workstation')    
     self._LoadConfigFile()
     if not workstation.IAMUserReady(self.aws_id, self.aws_secret):
       # try to get root AWS account from AWS default environment variables
@@ -40,7 +44,8 @@ class Cli(object):
     if not workstation.IAMUserReady(self.aws_id, self.aws_secret):
       raise RuntimeError('Invalid credentials. Please delete configuration' \
                          ' here: %s' % (self.config_filename))
-    self.manager = workstation.Manager(self.region, self.aws_id, self.aws_secret)
+    self.manager = workstation.Manager(self.region, self.aws_id,
+                                       self.aws_secret)
     return
 
   def ListWorkstations(self):
@@ -51,11 +56,25 @@ class Cli(object):
     self.manager.ListInstances()
     instance_id = raw_input('Instance id would you like to connect to: ')
     config_content = self.manager.CreateRemoteSessionConfig(instance_id)
-    config_filename = '/tmp/%s.nxs' % instance_id
-    config_file = open(config_filename, 'w')
+    #config_filename = '/tmp/%s.nxs' % instance_id
+    #config_file = open(config_filename, 'w')
+    
+    config_file, config_filename = tempfile.mkstemp()
     config_file.write(config_content)
     config_file.close()
-    cmd = 'nxclient --session %s' % config_filename
+    
+    p = platform.system()
+    cmd = None
+    if p == 'Darwin':
+      # Use Mac 'open' command assuming files with extension nxs are registered
+      cmd = 'open %s' % config_filename  
+    elif p == 'Windows':
+      cmd = 'nxclient --session %s' % config_filename  
+    elif p == 'Linux':
+      cmd = 'nxclient --session %s' % config_filename
+    else:
+      print 'Command may not work. Unknown platform type: %s' % p
+      cmd = 'nxclient --session %s' % config_filename  
     core.ExecuteCmd(cmd)
     return
 
@@ -76,7 +95,8 @@ class Cli(object):
   def CreateWorkstation(self):
     workstation_name = raw_input('Unique name to give new workstation: ')
     self.manager.CreateInstance(workstation_name, self.instance_type,
-                                self.ubuntu_release_name, self.mapr_version)
+                                self.ubuntu_release_name, self.mapr_version,
+                                self.ami_release_name, self.ami_owner_id)
     return
 
   def ResizeWorkstationRootVolume(self):
@@ -90,11 +110,18 @@ class Cli(object):
     self.manager.ListInstances()
     instance_id = raw_input('To which instance gets the new volume: ')
     vol_size_gb = long(raw_input('Desired size for new volume (in GB): '))
-    self.manager.AddNewVolumeToInstance(instance_id, vol_size_gb)
+    vol_id = self.manager.AddNewVolumeToInstance(instance_id, vol_size_gb)
+    print 'New volume mounted here (on instance %s): /mnt/vol-%s' % \
+      (instance_id, vol_id)
     return
 
   def _LoadConfigFile(self):
-    config = ConfigParser.RawConfigParser()
+    defaults = {'instance_type' : 'c1.xlarge',
+                 'ubuntu_release_name' : 'precise',
+                 'mapr_version' : 'v2.1.3',
+                 'ami_release_name' :  core.default_ami_release_name,
+                 'ami_owner_id' : core.default_ami_owner_id}
+    config = ConfigParser.RawConfigParser(defaults)
     config.read(self.config_filename)
     try:
       sec = 'credentials'
@@ -105,11 +132,8 @@ class Cli(object):
       self.instance_type = config.get(sec, 'instance_type')
       self.ubuntu_release_name = config.get(sec, 'ubuntu_release_name')
       self.mapr_version = config.get(sec, 'mapr_version')
-
-      # configure defaults
-      self.instance_type = 'c1.xlarge'
-      self.ubuntu_release_name = 'precise'
-      self.mapr_version = 'v2.1.3'
+      self.ami_release_name = config.get(sec, 'ami_release_name')
+      self.ami_owner_id = config.get(sec, 'ami_owner_id') 
     except:
       pass
     return
@@ -126,6 +150,10 @@ class Cli(object):
     config.set(sec, 'instance_type', self.instance_type)
     config.set(sec, 'ubuntu_release_name', self.ubuntu_release_name)
     config.set(sec, 'mapr_version', self.mapr_version)
+    
+    config.set(sec, 'ami_release_name', self.ami_release_name)
+    config.set(sec, 'ami_owner_id', self.ami_owner_id)    
+    
     f = open(self.config_filename, 'wb')
     config.write(f)
     return
@@ -137,7 +165,15 @@ class Cli(object):
 def main():
   cli = Cli()
   if (len(sys.argv) < 2):
-    print 'Usage: commands are: list, connect, stop, create, add_volume'
+    print """Usage:
+             list
+             connect
+             stop
+             create
+             destroy, 
+             add_volume
+             resize_root
+          """
     return 1
   cmd = sys.argv[1]
   
@@ -149,12 +185,12 @@ def main():
     cli.StopWorkstation()
   elif cmd == 'create':
     cli.CreateWorkstation()
-  elif cmd == 'add_volume':
-    cli.AddVolumeToWorkstation()
-  elif cmd == 'resize':
-    cli.ResizeWorkstationRootVolume()
   elif cmd == 'destroy':
     cli.DestroyWorkstation()
+  elif cmd == 'add_volume':
+    cli.AddVolumeToWorkstation()
+  elif cmd == 'resize_root':
+    cli.ResizeWorkstationRootVolume()  
   elif cmd == 'debug':
     cli.Debug()
   else:

@@ -4,6 +4,6 @@
 <mapEntry key="PYTHONPATH" value="${project_loc}:/home/ubuntu/git/iwct/build:/home/ubuntu/git/iwct/build/snap:"/>
 </mapAttribute>
 <stringAttribute key="org.eclipse.ui.externaltools.ATTR_LAUNCH_CONFIGURATION_BUILD_SCOPE" value="${none}"/>
-<stringAttribute key="org.eclipse.ui.externaltools.ATTR_LOCATION" value="/usr/bin/pylint"/>
+<stringAttribute key="org.eclipse.ui.externaltools.ATTR_LOCATION" value="/home/ubuntu/Envs/cirrus-pkg-test-02/bin/pylint"/>
 <stringAttribute key="org.eclipse.ui.externaltools.ATTR_TOOL_ARGUMENTS" value="${selected_resource_loc} --rcfile=${project_loc}/pylintrc"/>
 </launchConfiguration>

@@ -23,41 +23,49 @@
 
 
 """ Command Line Tool for creating Cirrus AMI releases."""
-from cirrus.ami import manager
-from boto.ec2.connection import EC2Connection
 from cirruscluster import core
+from cirruscluster.ami import builder
+from boto.ec2 import connection  
 import os
-import logging
+#import logging
 
 def main():
+  
+  role = None
+  while role not in core.valid_instance_roles:
+    role = raw_input('What role %s: ' % core.valid_instance_roles)
+  
+  virt_type = None
+  if role == 'workstation':
+    virt_type = 'paravirtual'
+    
+  while virt_type not in core.valid_virtualization_types:
+    role = raw_input('Which virtualization type %s: ' % \
+                     core.valid_virtualization_types)  
+    
+  
   # TODO(heathkh): Give this a proper Command Line Interface instead of editing
   # the script directly  
-  #########################################################################
-  # Params you can change...
-  #########################################################################
-  
-  #role = 'workstation'
-  #role = 'master'
-  role = 'worker'
-  virt_type = 'hvm'
-  #virt_type = 'paravirtual'
   region_name = 'us-east-1'
   ubuntu_release_name = 'precise'
+  ami_release_name = core.default_ami_release_name 
   mapr_version = 'v2.1.3'
   
   #########################################################################
   instance_type = None
   if role == 'workstation':
-    CHECK_EQ(virt_type, 'paravirtual', 'workstation must use virt_type pv')
+    if virt_type != 'paravirtual':
+      raise RuntimeError('workstation must use virt_type paravirtual')
     instance_type = 'c1.xlarge'
   else:
     virt_type_to_instance_template_type = {'paravirtual' : 'c1.xlarge',
                                            'hvm' : 'cc2.8xlarge'}
     instance_type = virt_type_to_instance_template_type[virt_type]
   assert(instance_type)
-  ec2 = EC2Connection(region = core.GetRegion(region_name))
-  ami_spec = manager.AmiSpecification(region_name, instance_type, 
-                                      ubuntu_release_name, mapr_version, role)  
+  ec2 = connection.EC2Connection(region = core.GetRegion(region_name))
+  ami_spec = builder.AmiSpecification(ami_release_name, region_name, 
+                                      instance_type, ubuntu_release_name, 
+                                      mapr_version, role)  
   keypair_name = 'cirrus_ami_maker_tmp'
   # TODO(heathkh): Change this to use OS specific home directory (win, mac)
   key_dir_path = os.path.expanduser('~/ec2/')
@@ -67,10 +75,10 @@ def main():
   try:
     keypair = ec2.create_key_pair(keypair_name)
     keypair.save(key_dir_path)
-  except:
+  except :
     pass
   ssh_key = open(private_key_filename, 'r').read()
-  ami_maker = manager.AmiMaker(ec2, ami_spec, keypair_name, ssh_key)  
+  ami_maker = builder.AmiBuilder(ec2, ami_spec, keypair_name, ssh_key)  
   ami_maker.Run()
   #TODO(heathkh): Copy the ami to all other regions and set the required 
   # permissions and tags as well

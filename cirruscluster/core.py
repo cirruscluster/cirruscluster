@@ -1,16 +1,18 @@
 from Crypto.PublicKey import RSA
-from boto import exception
-import boto
+from Crypto import Random
+from boto import ec2 as boto_ec2
+from boto import exception as boto_exception
 from boto.s3.key import Key
 from cirruscluster.ext import ansible
-from ext.ansible import callbacks
-from ext.ansible import inventory
-from ext.ansible import playbook
-from ext.ansible import runner
-from ext.ansible import utils
-from ext.ansible.utils import plugins
+from cirruscluster.ext.ansible import callbacks
+from cirruscluster.ext.ansible import inventory as ansible_inventory
+from cirruscluster.ext.ansible import playbook
+from cirruscluster.ext.ansible import runner
+#from cirruscluster.ext.ansible import utils
+#from cirruscluster.ext.ansible.utils import plugins
 import StringIO
 import base64
+#import exceptions
 import logging
 import math
 import multiprocessing
@@ -45,12 +47,12 @@ def GetNumCoresOnHosts(hosts, private_key):
   results = runner.Runner(host_list=hosts, private_key=private_key,
                           module_name='setup').run()
   num_cores_list = []
-  for host, props in results['contacted'].iteritems():
+  for _, props in results['contacted'].iteritems():
     cores = props['ansible_facts']['ansible_processor_cores']
     val = 0
     try:
       val = int(cores)
-    except:
+    except ValueError:
       pass
     num_cores_list.append(val)
   return num_cores_list
@@ -58,14 +60,14 @@ def GetNumCoresOnHosts(hosts, private_key):
 def RunPlaybookOnHosts(playbook_path, hosts, private_key, extra_vars=None):
   """ Runs the playbook and returns True if it completes successfully on all
   hosts. """
-  inventory = ansible.inventory.Inventory(hosts)
+  inventory = ansible_inventory.Inventory(hosts)
   if not inventory.list_hosts():
     raise RuntimeError("Host list is empty.")
   stats = callbacks.AggregateStats()
   verbose = 0
   playbook_cb = ansible.callbacks.PlaybookCallbacks(verbose=verbose)
   runner_cb = ansible.callbacks.PlaybookRunnerCallbacks(stats, verbose=verbose)
-  pb = ansible.playbook.PlayBook(playbook=playbook_path,
+  pb = playbook.PlayBook(playbook=playbook_path,
                                   host_list=hosts,
                                   remote_user='ubuntu',
                                   private_key_file=None,
@@ -119,7 +121,7 @@ def CheckOutput(*popenargs, **kwargs):
   Backported from Python 2.7 as it's implemented as pure python on stdlib.
   """
   process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
-  output, unused_err = process.communicate()
+  output, _ = process.communicate()
   retcode = process.poll()
   if retcode:
       cmd = kwargs.get("args")
@@ -154,11 +156,9 @@ def RunCommandOnHosts(cmd, hostnames, ssh_key):
   if not hostnames:
     return
   p = multiprocessing.Pool(len(hostnames))
-  # pool_commands = [MakeRemoteExecuteCmd(cmd, hostname, private_key_file, wait=wait) for hostname in hostnames]
   remote_command_args = [(cmd, hostname, ssh_key) for hostname in hostnames]
   result = None
-  try:
-    # result = p.map(ExecuteCmd, pool_commands)
+  try:    
     result = p.map(__RemoteExecuteHelper, remote_command_args)
   except:
     logging.info( 'failure in RunCommandOnHosts...')
@@ -171,7 +171,7 @@ def RunCommandOnHost(cmd, hostname, ssh_key):
   """ Executes a command via ssh and sends back the exit status code. """
   hostnames = [hostname]
   results = RunCommandOnHosts(cmd, hostnames, ssh_key)
-  CHECK_EQ(len(results), 1)
+  assert(len(results) == 1)
   return results[0]
 
 def ReadRemoteFile(remote_file_path, hostname, ssh_key):
@@ -182,16 +182,24 @@ def ReadRemoteFile(remote_file_path, hostname, ssh_key):
     raise IOError('Can not read remote path: %s' % (remote_file_path))
   return output
 
+def FileExists(remote_file_path, hostname, ssh_key):
+  cmd = 'ls %s' % remote_file_path
+  exit_code, _ = RunCommandOnHost(cmd, hostname, ssh_key)
+  exists = (exit_code == 0)
+  return exists  
+
+
 def __RemoteExecuteHelper(args):
   """ Helper for multiprocessing. """
   cmd, hostname, ssh_key = args
-  Crypto.Random.atfork()  # needed to fix bug in old python 2.6 interpreters
+  Random.atfork()  # needed to fix bug in old python 2.6 interpreters
   private_key = paramiko.RSAKey.from_private_key(StringIO.StringIO(ssh_key))
   client = paramiko.SSHClient()
   client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
   while True:
       try:
-          client.connect(hostname, username='ubuntu', pkey=private_key, allow_agent=False, look_for_keys=False)
+          client.connect(hostname, username='ubuntu', pkey=private_key, 
+                         allow_agent=False, look_for_keys=False)
           break
       except socket.error as e:
           # print 'socket timed out...'
@@ -212,7 +220,7 @@ def __RemoteExecuteHelper(args):
 
 def WaitForInstanceReachable(instance, ssh_key):  
   if not instance:
-    raise RuntimeErorr('No instance provided.')
+    raise RuntimeError('No instance provided.')
   hostname = instance.dns_name
   while True:
     unreachable = GetUnreachableHosts([hostname], ssh_key)
@@ -238,15 +246,17 @@ def GetUnreachableInstances(instances, ssh_key):
   """ Returns list of instances unreachable via ssh. """
   hostnames = [i.private_ip for i in instances]
   ssh_status = AreHostsReachable(hostnames, ssh_key)
-  CHECK_EQ(len(hostnames), len(ssh_status))
-  nonresponsive_instances = [instance for (instance, ssh_ok) in zip(instances, ssh_status) if ssh_ok == False]
+  assert(len(hostnames) == len(ssh_status))
+  nonresponsive_instances = [instance for (instance, ssh_ok) in
+                             zip(instances, ssh_status) if not ssh_ok]
   return nonresponsive_instances
 
 def GetUnreachableHosts(hostnames, ssh_key):
   """ Returns list of hosts unreachable via ssh. """
   ssh_status = AreHostsReachable(hostnames, ssh_key)
-  assert(len(hostnames), len(ssh_status))
-  nonresponsive_hostnames = [host for (host, ssh_ok) in zip(hostnames, ssh_status) if ssh_ok == False]
+  assert(len(hostnames) == len(ssh_status))
+  nonresponsive_hostnames = [host for (host, ssh_ok) in
+                             zip(hostnames, ssh_status) if not ssh_ok]
   return nonresponsive_hostnames
 
 def AreHostsReachable(hostnames, ssh_key):
@@ -254,7 +264,8 @@ def AreHostsReachable(hostnames, ssh_key):
   # validate input
   for hostname in hostnames:
     assert(len(hostname))
-  ssh_ok = [exit_code == 0 for (exit_code, output) in RunCommandOnHosts('echo test > /dev/null', hostnames, ssh_key)]
+  ssh_ok = [exit_code == 0 for (exit_code, _) in
+            RunCommandOnHosts('echo test > /dev/null', hostnames, ssh_key)]
   return ssh_ok
 
 ################################################################################
@@ -281,12 +292,15 @@ def LookupCirrusAmi(ec2, instance_type, ubuntu_release_name, mapr_version, role,
                     ami_owner_id = default_ami_owner_id):
   """ Returns AMI satisfying provided constraints. """
   if not role in valid_instance_roles:
-    raise RuntimeError('Specified role (%s) not a valid role: %s' % (role, valid_instance_roles))
+    raise RuntimeError('Specified role (%s) not a valid role: %s' % (role, 
+                       valid_instance_roles))
   virtualization_type = 'paravirtual'
   if IsHPCInstanceType(instance_type):
     virtualization_type = 'hvm'
   images = ec2.get_all_images(owners=[ami_owner_id])
   ami = None
+  ami_name = AmiName(ami_release_name, ubuntu_release_name, virtualization_type,
+                     mapr_version, role)  
   for image in images:
     if image.name == ami_name:
         ami = image
@@ -299,7 +313,7 @@ def LookupCirrusAmi(ec2, instance_type, ubuntu_release_name, mapr_version, role,
 
 def GetRegion(region_name):
   """ Converts region name string into boto Region object. """
-  regions = boto.ec2.regions()
+  regions = boto_ec2.regions()
   region = None
   valid_region_names = []
   for r in regions:
@@ -331,11 +345,12 @@ def PrivateToPublicOpenSSH(key, host):
       modulus = '00' + modulus
   ssh_rsa += '%08x' % (len(modulus) / 2,)
   ssh_rsa += modulus
-  public_key = 'ssh-rsa %s %s' % (base64.b64encode(base64.b16decode(ssh_rsa.upper())), host)
+  hash_string = base64.b64encode(base64.b16decode(ssh_rsa.upper()))
+  public_key = 'ssh-rsa %s %s' % (hash_string, host)
   return public_key
 
 def InitKeypair(ec2, s3, config_bucket_name, keypair_name, src_region, 
-                dst_regions, aws_id=None, aws_secret=None):
+                dst_regions):
   """ 
   Returns the ssh private key for the given keypair name Cirrus created bucket.
   Creates the keypair if it doesn't yet exist and stores private key in S3. 
@@ -371,19 +386,23 @@ def InitKeypair(ec2, s3, config_bucket_name, keypair_name, src_region,
   return ssh_key
 
 
-def DistributeKeyToRegions(src_region, dst_regions, private_keypair, aws_id=None, aws_secret=None):
+def DistributeKeyToRegions(src_region, dst_regions, private_keypair,
+                           aws_id=None, aws_secret=None):
   """
   Copies the keypair from the src to the dst regions. 
   Note: keypair must be a newly created key... that is the key material is 
   the private key not the public key.
   """
   private_key = RSA.importKey(private_keypair.material)
-  public_key_material = PrivateToPublicOpenSSH(private_key, private_keypair.name)
+  public_key_material = PrivateToPublicOpenSSH(private_key,
+                                               private_keypair.name)
   for dst_region in dst_regions:
     if dst_region == src_region:
       continue
-    logging.info( 'distributing key %s to region_name %s' % (private_keypair.name, dst_region))
-    dst_region_ec2 = boto.ec2.connect_to_region(dst_region, aws_access_key_id=aws_id, aws_secret_access_key=aws_secret)
+    logging.info( 'distributing key %s to region %s' % (private_keypair.name,
+                                                        dst_region))
+    dst_region_ec2 = boto_ec2.connect_to_region(dst_region,
+      aws_access_key_id=aws_id, aws_secret_access_key=aws_secret)
     try:
       dst_region_ec2.delete_key_pair(private_keypair.name)
     except:
@@ -408,11 +427,10 @@ def __WaitForVolume(volume, desired_state):
     volume.update()
     sys.stdout.write('.')
     sys.stdout.flush()
-    print 'status is: %s' % volume.status
+    #print 'status is: %s' % volume.status
     if volume.status == desired_state:
         break
-    time.sleep(5)
-  print 'done'
+    time.sleep(5)  
   return
 
 def WaitForSnapshotCompleted(snapshot):
@@ -422,11 +440,10 @@ def WaitForSnapshotCompleted(snapshot):
       snapshot.update()
       sys.stdout.write('.')
       sys.stdout.flush()
-      print 'status is: %s' % snapshot.status
+      #print 'status is: %s' % snapshot.status
       if snapshot.status == 'completed':
           break
       time.sleep(5)
-  print 'done'
   return
 
 
@@ -446,12 +463,11 @@ def __WaitForInstance(instance, desired_state):
           sys.stdout.flush()
           if state == desired_state:
               break
-      except boto.exception.EC2ResponseError as e:
-          logging.info( e)
-      except boto.exception.ResponseError as e:  # This may be an alias of EC2ResponseError
-          logging.info( e)
-      time.sleep(5)
-  print 'done'
+      except boto_exception.EC2ResponseError as e:
+          logging.info(e)
+      #except boto_exception.ResponseError as e:  # This is an alias
+      #    logging.info(e)
+      time.sleep(5)  
   return
 
 def WaitForInstanceRunning(instance):
@@ -499,6 +515,7 @@ def SearchUbuntuAmiDatabase(release_name, region_name, root_store_type,
   region_col = 6
   ami_col = 7
   matching_amis = []  # list of tuples (ami_id, tokens)
+  
   for line in url_file:
     tokens = line.split()
     # lines have different number of columns (one fewer for hvm)
@@ -507,7 +524,7 @@ def SearchUbuntuAmiDatabase(release_name, region_name, root_store_type,
     elif (len(tokens) == 10):
       virtualization_type_col = 9
     else:
-      LOG(FATAL, 'invalid line format')
+      raise RuntimeError('invalid line format: %s' % line)
     if tokens[release_name_col] == release_name \
        and tokens[release_tag_col] == 'release' \
        and tokens[root_store_type_col] == root_store_type \
@@ -517,7 +534,9 @@ def SearchUbuntuAmiDatabase(release_name, region_name, root_store_type,
        matching_amis.append((tokens[ami_col], tokens))
   matching_amis.sort(key=lambda (ami, tokens) : tokens[release_date_col], 
                      reverse=True)  # order newest first  
-  CHECK_GE(len(matching_amis), 1)
+  if not matching_amis:
+    params = [release_name, root_store_type, region_name,  virtualization_type]
+    raise RuntimeError('Failed to find matching ubuntu ami: %s', params)
   selected_ami = matching_amis[0][0]
   return selected_ami
 
