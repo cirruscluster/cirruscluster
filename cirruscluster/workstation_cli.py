@@ -59,7 +59,8 @@ class Cli(object):
     #config_filename = '/tmp/%s.nxs' % instance_id
     #config_file = open(config_filename, 'w')
     
-    config_file, config_filename = tempfile.mkstemp()
+    fd, config_filename = tempfile.mkstemp()
+    config_file = os.fdopen(fd, "w")
     config_file.write(config_content)
     config_file.close()
     
@@ -75,7 +76,11 @@ class Cli(object):
     else:
       print 'Command may not work. Unknown platform type: %s' % p
       cmd = 'nxclient --session %s' % config_filename  
-    core.ExecuteCmd(cmd)
+    result = core.ExecuteCmd(cmd)
+    print result
+    if result != 0:
+      print 'Could not launch nxclient.'
+      print 'Please install it from http://www.nomachine.com'
     return
 
   def StopWorkstation(self):
@@ -159,7 +164,7 @@ class Cli(object):
     return
 
   def __Debug(self):
-    res = self.manager.Debug()
+    self.manager.Debug()
     return
 
 def main():

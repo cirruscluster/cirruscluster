@@ -75,7 +75,7 @@ def main():
   try:
     keypair = ec2.create_key_pair(keypair_name)
     keypair.save(key_dir_path)
-  except :
+  except:
     pass
   ssh_key = open(private_key_filename, 'r').read()
   ami_maker = builder.AmiBuilder(ec2, ami_spec, keypair_name, ssh_key)  

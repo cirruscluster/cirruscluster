@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 
-import cirruscluster.ext.ansible.utils
+from cirruscluster.ext.ansible import utils
 import sys
 import getpass
 import os

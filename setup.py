@@ -3,7 +3,7 @@ from setuptools import find_packages
 
 setup(
   name='cirruscluster',
-  version='0.0.1dev', # use semantic version conventions
+  version='0.0.6dev', # use semantic version conventions
   packages= find_packages(),
   license='MIT',
   long_description=open('README.rst').read(),
@@ -14,8 +14,11 @@ setup(
                     'pyyaml>=3.10',
                     'Jinja2>=2.7',
                     'paramiko>=1.10.1',
+                    'paramiko',
                     'python-dateutil>=2.1',
-                    'requests>=1.2'
+                    'requests>=1.2',
+                    'passlib>=1.6.1',
+                    
                     ],
   package_data={'cirruscluster': ['cluster/playbooks/*', 'ami/playbooks/cluster/*', 'ami/playbooks/workstation/*']},
   include_package_data=True,    

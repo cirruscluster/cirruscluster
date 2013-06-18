@@ -8,8 +8,6 @@ from cirruscluster.ext.ansible import callbacks
 from cirruscluster.ext.ansible import inventory as ansible_inventory
 from cirruscluster.ext.ansible import playbook
 from cirruscluster.ext.ansible import runner
-#from cirruscluster.ext.ansible import utils
-#from cirruscluster.ext.ansible.utils import plugins
 import StringIO
 import base64
 import logging
@@ -108,10 +106,10 @@ def ExecuteCmd(cmd, quiet=False):
   """ Run a command in a shell. """
   result = None
   if quiet:
-      with open(os.devnull, "w") as fnull:
-          result = subprocess.call(cmd, shell=True, stdout=fnull, stderr=fnull)
+    with open(os.devnull, "w") as fnull:
+      result = subprocess.call(cmd, shell=True, stdout=fnull, stderr=fnull)
   else:
-      result = subprocess.call(cmd, shell=True)
+    result = subprocess.call(cmd, shell=True)
   return result
 
 def CheckOutput(*popenargs, **kwargs):

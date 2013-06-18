@@ -238,7 +238,7 @@ class Ec2Cluster():
     self._check_role_name(role)  
     self._create_security_groups(role)
     security_groups = self._get_group_names([role])    
-    spot_instance_request_ids = []
+    #spot_instance_request_ids = []
     # placement_group compatible only for HPC class instances
     placement_group = None
     if core.IsHPCInstanceType(instance_type):    

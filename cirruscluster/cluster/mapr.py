@@ -277,7 +277,8 @@ class MaprCluster(object, ):
     extra_vars = {'map_slots_param': map_slots_param,
                   'reduce_slots_param': reduce_slots_param,
                   'hadoop_conf_dir' : self.hadoop_conf_dir}
-    playbook = resource_filename(__name__, 'playbooks/cluster/mapred-site.yml')
+    path = 'playbooks/cluster/mapred-site.yml'
+    playbook = pkg_resources.resource_filename(__name__, path)
     return core.RunPlaybookOnHosts(playbook,
                                    self.__InstancesToHostnames(instances),
                                    self.ssh_key, extra_vars)
@@ -428,7 +429,8 @@ class MaprCluster(object, ):
                   'master_ip': master_instance.private_ip,
                   'root_password_hash': root_password_hash,
                   'is_master' : True}    
-    playbook = resource_filename(__name__, 'playbooks/cluster/master.yml')
+    path = 'playbooks/cluster/master.yml'
+    playbook = pkg_resources.resource_filename(__name__, path)
     core.RunPlaybookOnHost(playbook, master_instance.private_ip, 
                            self.ssh_key, extra_vars)    
     self.__WaitForMasterReady()    
@@ -768,8 +770,9 @@ class MaprCluster(object, ):
     hostnames = self.__InstancesToHostnames(worker_instances)
     extra_vars = {'cluster_name': self.config.cluster_name,
                   'master_ip': master_instance.private_ip,
-                  'master_pub_key': master_pub_key}    
-    playbook = resource_filename(__name__, 'playbooks/cluster/worker.yml')
+                  'master_pub_key': master_pub_key}
+    path = 'playbooks/cluster/worker.yml'
+    playbook = pkg_resources.resource_filename(__name__, path)
     assert(core.RunPlaybookOnHosts(playbook, hostnames, self.ssh_key,
                                    extra_vars))
     num_cores = self.GetNumCoresPerWorker()

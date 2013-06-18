@@ -369,11 +369,11 @@ class Manager(object):
                           self.ssh_key)
     return config_content
 
-  def __GetInstanceById(self, id):
+  def __GetInstanceById(self, instance_id):
     instances = self.__GetInstances()
     desired_instance = None
     for instance in instances:
-      if instance.id == id:
+      if instance.id == instance_id:
         desired_instance = instance
         break
     return desired_instance
