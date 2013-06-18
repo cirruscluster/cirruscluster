@@ -18,7 +18,7 @@
 
 import time
 
-from ansible import errors
+from cirruscluster.ext.ansible import errors
 
 class AsyncPoller(object):
     """ Manage asynchronous jobs. """

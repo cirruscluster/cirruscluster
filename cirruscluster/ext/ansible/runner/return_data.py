@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 
-from ansible import utils
+from cirruscluster.ext.ansible import utils
 
 class ReturnData(object):
     ''' internal return class for runner execute methods, not part of public API signature '''

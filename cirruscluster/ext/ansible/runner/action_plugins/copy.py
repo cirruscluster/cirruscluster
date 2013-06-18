@@ -17,8 +17,8 @@
 
 import os
 
-from ansible import utils
-from ansible import errors
+from cirruscluster.ext.ansible import utils
+from cirruscluster.ext.ansible import errors
 from cirruscluster.ext.ansible.runner.return_data import ReturnData
 
 class ActionModule(object):

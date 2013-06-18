@@ -22,8 +22,8 @@ import shutil
 import subprocess
 import select
 import fcntl
-from ansible import errors
-from ansible import utils
+from cirruscluster.ext.ansible import errors
+from cirruscluster.ext.ansible import utils
 from cirruscluster.ext.ansible.callbacks import vvv
 
 class Connection(object):

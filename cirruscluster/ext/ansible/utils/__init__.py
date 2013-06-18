@@ -22,8 +22,8 @@ import yaml
 import copy
 import optparse
 import operator
-from ansible import errors
-from ansible import __version__
+from cirruscluster.ext.ansible import errors
+from cirruscluster.ext.ansible import __version__
 from cirruscluster.ext.ansible.utils.template import *
 from cirruscluster.ext.ansible.utils.plugins import *
 import cirruscluster.ext.ansible.constants as C

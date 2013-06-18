@@ -32,7 +32,7 @@ end must be the same as that of beg, else a exception is raised.
 '''
 import string
 
-from ansible import errors
+from cirruscluster.ext.ansible import errors
 
 def detect_range(line = None):
     '''

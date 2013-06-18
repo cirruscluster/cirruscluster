@@ -22,7 +22,7 @@ from cirruscluster.ext.ansible.inventory.host import Host
 from cirruscluster.ext.ansible.inventory.group import Group
 from cirruscluster.ext.ansible.inventory.expand_hosts import detect_range
 from cirruscluster.ext.ansible.inventory.expand_hosts import expand_hostname_range
-from ansible import errors
+from cirruscluster.ext.ansible import errors
 import shlex
 import re
 

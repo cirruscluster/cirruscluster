@@ -21,8 +21,8 @@ import pipes
 import socket
 import random
 from cirruscluster.ext.ansible.callbacks import vvv
-from ansible import errors
-from ansible import utils
+from cirruscluster.ext.ansible import errors
+from cirruscluster.ext.ansible import utils
 import StringIO
 # prevent paramiko warning noise -- see http://stackoverflow.com/questions/3920502/
 HAVE_PARAMIKO=False

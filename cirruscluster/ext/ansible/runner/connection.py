@@ -18,7 +18,7 @@
 
 ################################################
 
-from ansible import utils
+from cirruscluster.ext.ansible import utils
 from cirruscluster.ext.ansible.errors import AnsibleError
 import cirruscluster.ext.ansible.constants as C
 

@@ -23,9 +23,9 @@ import tempfile
 import base64
 
 import cirruscluster.ext.ansible.constants as C
-from ansible import utils
-from ansible import errors
-from ansible import module_common
+from cirruscluster.ext.ansible import utils
+from cirruscluster.ext.ansible import errors
+from cirruscluster.ext.ansible import module_common
 from cirruscluster.ext.ansible.runner.return_data import ReturnData
 
 class ActionModule(object):

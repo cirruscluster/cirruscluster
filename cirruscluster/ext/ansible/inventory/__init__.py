@@ -27,8 +27,8 @@ from cirruscluster.ext.ansible.inventory.ini import InventoryParser
 from cirruscluster.ext.ansible.inventory.script import InventoryScript
 from cirruscluster.ext.ansible.inventory.group import Group
 from cirruscluster.ext.ansible.inventory.host import Host
-from ansible import errors
-from ansible import utils
+from cirruscluster.ext.ansible import errors
+from cirruscluster.ext.ansible import utils
 
 class Inventory(object):
     """

@@ -16,7 +16,7 @@
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 
 import subprocess
-from ansible import utils, errors
+from cirruscluster.ext.ansible import utils, errors
 
 class LookupModule(object):
 

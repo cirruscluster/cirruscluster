@@ -17,7 +17,7 @@
 
 import os
 import glob
-from ansible import utils
+from cirruscluster.ext.ansible import utils
 
 class LookupModule(object):
 

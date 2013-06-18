@@ -21,7 +21,7 @@ import codecs
 import jinja2
 import yaml
 import json
-from ansible import errors
+from cirruscluster.ext.ansible import errors
 import cirruscluster.ext.ansible.constants as C
 import time
 import subprocess
@@ -156,7 +156,7 @@ def _varFind(basedir, text, vars, lookup_fatal, depth=0):
         if basedir is None:
             return {'replacement': None, 'start': start, 'end': end}
         var_end -= 1
-    	from ansible import utils
+    	from cirruscluster.ext.ansible import utils
         args = text[part_start:var_end]
         if lookup_plugin_name == 'LOOKUP':
             lookup_plugin_name, args = args.split(",", 1)
@@ -311,7 +311,7 @@ class J2Template(jinja2.environment.Template):
 def template_from_file(basedir, path, vars):
     ''' run a file through the templating engine '''
 
-    from ansible import utils
+    from cirruscluster.ext.ansible import utils
     realpath = utils.path_dwim(basedir, path)
     loader=jinja2.FileSystemLoader([basedir,os.path.dirname(realpath)])
     environment = jinja2.Environment(loader=loader, trim_blocks=True)

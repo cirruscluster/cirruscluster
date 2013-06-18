@@ -21,8 +21,8 @@ import subprocess
 import cirruscluster.ext.ansible.constants as C
 from cirruscluster.ext.ansible.inventory.host import Host
 from cirruscluster.ext.ansible.inventory.group import Group
-from ansible import utils
-from ansible import errors
+from cirruscluster.ext.ansible import utils
+from cirruscluster.ext.ansible import errors
 
 class InventoryScript(object):
     ''' Host inventory parser for ansible using external inventory scripts. '''

@@ -32,9 +32,9 @@ import shlex
 
 import cirruscluster.ext.ansible.constants as C
 import cirruscluster.ext.ansible.inventory
-from ansible import utils
-from ansible import errors
-from ansible import module_common
+from cirruscluster.ext.ansible import utils
+from cirruscluster.ext.ansible import errors
+from cirruscluster.ext.ansible import module_common
 import poller
 import connection
 from return_data import ReturnData

@@ -19,9 +19,9 @@ import json
 import os
 import base64
 from cirruscluster.ext.ansible.callbacks import vvv
-from ansible import utils
-from ansible import errors
-from ansible import constants
+from cirruscluster.ext.ansible import utils
+from cirruscluster.ext.ansible import errors
+from cirruscluster.ext.ansible import constants
 
 HAVE_ZMQ=False
 

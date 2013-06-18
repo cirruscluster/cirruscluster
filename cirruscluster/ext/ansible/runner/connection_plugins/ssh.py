@@ -25,8 +25,8 @@ import select
 import fcntl
 import cirruscluster.ext.ansible.constants as C
 from cirruscluster.ext.ansible.callbacks import vvv
-from ansible import errors
-from ansible import utils
+from cirruscluster.ext.ansible import errors
+from cirruscluster.ext.ansible import utils
 
 class Connection(object):
     ''' ssh based connections '''

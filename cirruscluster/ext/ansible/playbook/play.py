@@ -17,8 +17,8 @@
 
 #############################################
 
-from ansible import utils
-from ansible import errors
+from cirruscluster.ext.ansible import utils
+from cirruscluster.ext.ansible import errors
 from cirruscluster.ext.ansible.playbook.task import Task
 import shlex
 import os

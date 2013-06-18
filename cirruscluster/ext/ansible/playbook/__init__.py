@@ -18,8 +18,8 @@
 import cirruscluster.ext.ansible.inventory
 import cirruscluster.ext.ansible.runner
 import cirruscluster.ext.ansible.constants as C
-from ansible import utils
-from ansible import errors
+from cirruscluster.ext.ansible import utils
+from cirruscluster.ext.ansible import errors
 import cirruscluster.ext.ansible.callbacks
 import os
 import shlex
