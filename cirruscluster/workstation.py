@@ -34,6 +34,14 @@ import time
 
 workstation_profile = 'cirrus_workstation_profile'
 
+class InstanceInfo(object):
+  def __init__(self, name, id, state, hostname):
+    self.name = name
+    self.id = id
+    self.state = state
+    self.hostname = hostname
+    return
+
 def IAMUserReady(iam_aws_id, iam_aws_secret):
   """ Returns true if IAM user can login. """
   ready = False
@@ -183,18 +191,16 @@ class Manager(object):
     print test_instance.public_dns_name
     core.WaitForHostsReachable([test_instance.public_dns_name], self.ssh_key)
     return
-
+  
   def ListInstances(self):
-    instances = self.__GetInstances()
-    for instance in instances:
-      if instance.state == 'terminated':
-        continue
-      if self.workstation_tag in instance.tags:
-        name = 'none'
-        if 'Name' in instance.tags:
-          name = instance.tags['Name']
-        print 'id: %s name: %s state: %s' % (instance.id, name, instance.state)
-    return
+    ec2_instances = [i for i in self.__GetInstances() 
+                     if i.state != 'terminated' 
+                        and self.workstation_tag in i.tags
+                        and 'Name' in i.tags]
+    instance_info = []
+    for i in ec2_instances:
+      instance_info.append(InstanceInfo(i.tags['Name'], i.id, i.state, i.public_dns_name))
+    return instance_info
 
   def TerminateInstance(self, instance_id):
       instance = self.__GetInstanceById(instance_id)

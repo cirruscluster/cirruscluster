@@ -8,6 +8,13 @@ import sys
 import platform
 import tempfile
 
+
+def PrintInstances(manager):
+  for instance in manager.ListInstances():
+    print 'id: %s name: %s state: %s host: %s' % (instance.id, instance.name, instance.state, instance.hostname)
+  return
+  
+
 class Cli(object):
   """ CLI for operations on Cirrus workstations."""
   def __init__(self):
@@ -49,11 +56,11 @@ class Cli(object):
     return
 
   def ListWorkstations(self):
-    self.manager.ListInstances()
+    PrintInstances(self.manager)
     return
 
   def ConnectToWorkstation(self):
-    self.manager.ListInstances()
+    PrintInstances(self.manager)
     instance_id = raw_input('Instance id would you like to connect to: ')
     config_content = self.manager.CreateRemoteSessionConfig(instance_id)
     #config_filename = '/tmp/%s.nxs' % instance_id
@@ -84,13 +91,13 @@ class Cli(object):
     return
 
   def StopWorkstation(self):
-    self.manager.ListInstances()
+    PrintInstances(self.manager)
     instance_id = raw_input('Which instance id would you like to stop: ')
     self.manager.StopInstance(instance_id)
     return
 
   def DestroyWorkstation(self):
-    self.manager.ListInstances()
+    PrintInstances(self.manager)
     instance_id = raw_input('Which instance id would you like to destroy: ')
     confirm = raw_input('If you are sure, enter "yes": ')
     if confirm == 'yes':
@@ -105,14 +112,14 @@ class Cli(object):
     return
 
   def ResizeWorkstationRootVolume(self):
-    self.manager.ListInstances()
+    PrintInstances(self.manager)
     instance_id = raw_input('Which instance id would you like to modify: ')
     vol_size_gb = long(raw_input('Size for resized volume (in GB): '))
     self.manager.ResizeRootVolumeOfInstance(instance_id, vol_size_gb)
     return
 
   def AddVolumeToWorkstation(self):
-    self.manager.ListInstances()
+    PrintInstances(self.manager)
     instance_id = raw_input('To which instance gets the new volume: ')
     vol_size_gb = long(raw_input('Desired size for new volume (in GB): '))
     vol_id = self.manager.AddNewVolumeToInstance(instance_id, vol_size_gb)
