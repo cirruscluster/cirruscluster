@@ -3,10 +3,10 @@ from setuptools import find_packages
 
 setup(
   name='cirruscluster',
-  version='0.0.6dev', # use semantic version conventions
+  version='0.0.1-2', # use semantic version conventions
   packages= find_packages(),
   license='MIT',
-  long_description=open('README.md').read(),
+  #long_description=open('README.md').read(),
   install_requires=['distribute', 
                     'docutils>=0.3', 
                     'boto>=2.9.5',
