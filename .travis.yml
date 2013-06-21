@@ -4,7 +4,6 @@ python:
   - "2.7"  
 # command to install dependencies
 install:
-  - curl http://python-distribute.org/distribute_setup.py | python
-  - python setup.py install  
+  - pip install .  
 # command to run tests
 script: python -m unittest discover

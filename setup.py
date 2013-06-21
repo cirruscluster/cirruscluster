@@ -14,8 +14,8 @@ setup(
                     'boto>=2.9.5',                    
                     'pyyaml>=3.10',
                     'Jinja2>=2.7',                    
-                    'python-dateutil>=2.1',
                     'requests>=1.2',
+                    'python-dateutil', #'python-dateutil>=2.1',
                     'pycrypto', # this seems hard to satisfy on Win
                     ],
   package_data={'cirruscluster': ['cluster/playbooks/*', 'ami/playbooks/cluster/*', 'ami/playbooks/workstation/*']},
