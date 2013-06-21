@@ -40,9 +40,8 @@ def main():
     virt_type = 'paravirtual'
     
   while virt_type not in core.valid_virtualization_types:
-    role = raw_input('Which virtualization type %s: ' % \
-                     core.valid_virtualization_types)  
-    
+    virt_type = raw_input('Which virtualization type %s: ' % \
+                           core.valid_virtualization_types)
   
   # TODO(heathkh): Give this a proper Command Line Interface instead of editing
   # the script directly  
@@ -68,7 +67,7 @@ def main():
                                       mapr_version, role)  
   keypair_name = 'cirrus_ami_maker_tmp'
   # TODO(heathkh): Change this to use OS specific home directory (win, mac)
-  key_dir_path = os.path.expanduser('~/ec2/')
+  key_dir_path = os.path.expanduser('~/keys/')
   private_key_filename = '%s/%s.pem' % (key_dir_path, keypair_name)
   if not os.path.exists(key_dir_path):
     os.mkdir(key_dir_path)  

@@ -103,9 +103,12 @@ class AmiBuilder(object):
       raise RuntimeError('unknown role: %s' % (self.ami_spec.role))        
     
     
-    if self.ami_spec.role == 'workstation':
-      raw_input('Please login and perform any custom manipulations before '
-                'snapshot is made!')
+    
+    print 'Please login and perform any custom manipulations before '\
+          'snapshot is made!'
+    
+    raw_input('Press any key to shutdown and begin creating AMI. '\
+              '(or ctrl-c to quit and re-run config process).')
     
     self.__SecurityScrub(template_instance)
     

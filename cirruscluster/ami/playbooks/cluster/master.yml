@@ -14,7 +14,7 @@
          - ganglia-monitor
          - ganglia-webfrontend
          - gmetad
-         - sysvinit-utils         
+         - sysvinit-utils
          
     - name: Configure ganglia
       file: src=/etc/ganglia-webfrontend/apache.conf dest=/etc/apache2/sites-enabled/ganglia state=link owner=root group=root     

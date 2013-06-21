@@ -5,6 +5,10 @@
   
 - name: Ensure warden pid cleaned up
   file: path=/opt/mapr/logs/warden.pid state=absent
+  
+- name: Ensure cldb pid cleaned up (on master)
+  file: path=/opt/mapr/logs/cldb.pid state=absent
+  when: set $is_master
     
 - name: Try to stop zookeeper (on master)
   shell: service mapr-zookeeper stop
@@ -41,6 +45,10 @@
 
 - name: Ensure warden pid cleaned up
   file: path=/opt/mapr/logs/warden.pid state=absent
+  
+- name: Ensure cldb pid cleaned up (on master)
+  file: path=/opt/mapr/logs/cldb.pid state=absent
+  when: set $is_master
     
 - name: Try to start warden
   shell: service mapr-warden start

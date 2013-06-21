@@ -37,14 +37,15 @@ from cirruscluster.ext.ansible import errors
 from cirruscluster.ext.ansible import module_common
 import poller
 import connection
-from return_data import ReturnData
+#from return_data import ReturnData
+from cirruscluster.ext.ansible.runner.return_data import ReturnData
 from cirruscluster.ext.ansible.callbacks import DefaultRunnerCallbacks, vv
 
-HAS_ATFORK=True
-try:
-    from Crypto.Random import atfork
-except ImportError:
-    HAS_ATFORK=False
+# HAS_ATFORK=True
+# try:
+#     from Crypto.Random import atfork
+# except ImportError:
+#     HAS_ATFORK=False
 
 multiprocessing_runner = None
 
@@ -53,10 +54,10 @@ multiprocessing_runner = None
 
 def _executor_hook(job_queue, result_queue):
 
-    # attempt workaround of https://github.com/newsapps/beeswithmachineguns/issues/17
-    # this function also not present in CentOS 6
-    if HAS_ATFORK:
-        atfork()
+#     # attempt workaround of https://github.com/newsapps/beeswithmachineguns/issues/17
+#     # this function also not present in CentOS 6
+#     if HAS_ATFORK:
+#         atfork()
 
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     while not job_queue.empty():
@@ -232,13 +233,17 @@ class Runner(object):
 
     # *****************************************************
 
+
+    def __call__(self, host):
+      return self._executor(host)
+
     def _executor(self, host):
         ''' handler for multiprocessing library '''
 
         try:
             exec_rc = self._executor_internal(host)
-            if type(exec_rc) != ReturnData:
-                raise Exception("unexpected return type: %s" % type(exec_rc))
+            #if type(exec_rc) != ReturnData and type(exec_rc) != ansible.runner.return_data.ReturnData:
+            #    raise Exception("unexpected return type: %s" % type(exec_rc))
             # redundant, right?
             if not exec_rc.comm_ok:
                 self.callbacks.on_unreachable(host, exec_rc.result)
@@ -564,48 +569,65 @@ class Runner(object):
         return (out_path, is_new_style, shebang)
 
     # *****************************************************
-
+ 
+#     import time
+#     def _parallel_exec(self, hosts):
+#         ''' handles mulitprocessing when more than 1 fork is required '''
+#         job_queue = None
+#         fail_count = 0
+#         manager = multiprocessing.Manager()
+#         while not job_queue:
+#           try:
+#             job_queue = manager.Queue()
+#           except IOError:
+#             print '.'
+#             fail_count += 1
+#             time.sleep(1)
+#             if fail_count > 2:
+#               raise
+#             manager = multiprocessing.Manager()
+#              
+#           #print 'error... will retry...'
+#            
+#         for host in hosts:
+#             job_queue.put(host)
+#              
+#         result_queue = manager.Queue()
+#  
+#         workers = []
+#         for i in range(self.forks):
+#             prc = multiprocessing.Process(target=_executor_hook,
+#                 args=(job_queue, result_queue))
+#             prc.start()
+#             workers.append(prc)
+#  
+#         try:
+#             for worker in workers:
+#                 worker.join()
+#         except KeyboardInterrupt:
+#             for worker in workers:
+#                 worker.terminate()
+#                 worker.join()
+#  
+#         results = []
+#         try:
+#             while not result_queue.empty():
+#                 results.append(result_queue.get(block=False))
+#         except socket.error:
+#             raise errors.AnsibleError("<interrupted>")
+#         return results
+  
     import time
     def _parallel_exec(self, hosts):
         ''' handles mulitprocessing when more than 1 fork is required '''
-
-        manager = multiprocessing.Manager()
-        job_queue = None
-        while not job_queue:
-          try:
-            job_queue = manager.Queue()
-          except:
-            pass
-          print 'error... will retry...'
-          time.sleep(2)
-          
-          
-        for host in hosts:
-            job_queue.put(host)
-            
-        result_queue = manager.Queue()
-
-        workers = []
-        for i in range(self.forks):
-            prc = multiprocessing.Process(target=_executor_hook,
-                args=(job_queue, result_queue))
-            prc.start()
-            workers.append(prc)
-
-        try:
-            for worker in workers:
-                worker.join()
-        except KeyboardInterrupt:
-            for worker in workers:
-                worker.terminate()
-                worker.join()
-
+        if not hosts:
+            return
+        p = multiprocessing.Pool(self.forks)
         results = []
-        try:
-            while not result_queue.empty():
-                results.append(result_queue.get(block=False))
-        except socket.error:
-            raise errors.AnsibleError("<interrupted>")
+        #results = p.map(multiprocessing_runner, hosts) # can't handle keyboard interrupt
+        results = p.map_async(multiprocessing_runner, hosts).get(9999999)
+        p.close()
+        p.join()
         return results
 
     # *****************************************************

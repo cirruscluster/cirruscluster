@@ -140,7 +140,11 @@ class MaprCluster(object, ):
     return
   
   def ShowUiUrls(self):
-    master_url = self.__GetMasterInstance().private_hostname
+    master = self.__GetMasterInstance()
+    if not master:
+      print 'No cluster is running...'
+      return
+    master_url = master.private_hostname
     mapr_ui_url = 'https://%s:8443' % (master_url)
     ganglia_ui_url = 'http://%s/ganglia' % (master_url)
     
@@ -162,7 +166,7 @@ class MaprCluster(object, ):
 
   def GetNumCoresPerWorker(self):
     hosts = self.__InstancesToHostnames(self.__GetWorkerInstances())
-    assert(len(hosts) == 1)
+    assert(len(hosts) >= 1)
     # construct the ansible runner and execute on all hosts
     num_cores_list = core.GetNumCoresOnHosts(hosts, self.ssh_key)
     min_num_cores = min(num_cores_list)
@@ -277,7 +281,7 @@ class MaprCluster(object, ):
     extra_vars = {'map_slots_param': map_slots_param,
                   'reduce_slots_param': reduce_slots_param,
                   'hadoop_conf_dir' : self.hadoop_conf_dir}
-    path = 'playbooks/cluster/mapred-site.yml'
+    path = 'playbooks/mapred-site.yml'
     playbook = pkg_resources.resource_filename(__name__, path)
     return core.RunPlaybookOnHosts(playbook,
                                    self.__InstancesToHostnames(instances),
@@ -288,6 +292,8 @@ class MaprCluster(object, ):
     register with the cldb to join the mapr cluster. This trys to find these 
     missing workers and add them to the cluster. """
     lazy_worker_instances = self.__GetMissingWorkers()
+    if not lazy_worker_instances:
+      return
     reachable_states = self.__AreInstancesReachable(lazy_worker_instances)
     reachable_instances = [t[0] for t in zip(lazy_worker_instances, 
                                              reachable_states) if t[1]]
@@ -315,8 +321,8 @@ class MaprCluster(object, ):
     #self.TerminateUnreachableInstances()
     #self.__ConfigureMaster()
     #self.__ConfigureGanglia()
-    self.__ConfigureMaster()
-    #self.__ConfigureWorkers(self.__GetWorkerInstances())
+    #self.__ConfigureMaster()
+    self.__ConfigureWorkers(self.__GetWorkerInstances())
     #print self.GetNumCoresPerWorker()
     #self.ConfigureClient()
     #self.__SetWorkerTopology()
@@ -429,7 +435,7 @@ class MaprCluster(object, ):
                   'master_ip': master_instance.private_ip,
                   'root_password_hash': root_password_hash,
                   'is_master' : True}    
-    path = 'playbooks/cluster/master.yml'
+    path = 'playbooks/master.yml'
     playbook = pkg_resources.resource_filename(__name__, path)
     core.RunPlaybookOnHost(playbook, master_instance.private_ip, 
                            self.ssh_key, extra_vars)    
@@ -654,7 +660,7 @@ class MaprCluster(object, ):
     return 
   
     
-  @core.RetryUntilReturnsTrue(tries=10)
+  #@core.RetryUntilReturnsTrue(tries=10)
   def __CreateCacheVolume(self, new_rack_toplogy):
     logging.info( '__CreateCacheVolume()')
     # set the desired topology for the new volume
@@ -753,28 +759,35 @@ class MaprCluster(object, ):
     # this seems to fail... 
     # try waiting to see if there may be a race condition causing segfault
     #in maprfs
-    time.sleep(30)     
+    time.sleep(1)     
     for new_rack in new_racks:
+      print new_rack
       self.__CreateCacheVolume(new_rack)
     return
   
   def __ConfigureWorkers(self, worker_instances):
     if not worker_instances:
       return
+    
+    hostnames = self.__InstancesToHostnames(worker_instances)
+    
+    # Verify all workers are reachable before continuing...
+    core.WaitForHostsReachable(hostnames, self.ssh_key)
+    
     master_instance = self.__GetMasterInstance()
     master_pub_key = core.ReadRemoteFile('/root/.ssh/id_rsa.pub', 
                                          master_instance.public_hostname, 
                                          self.ssh_key)
     # ensure newline is removed... otherwise there is an error parsing yml!
     master_pub_key = master_pub_key.strip() 
-    hostnames = self.__InstancesToHostnames(worker_instances)
+    
     extra_vars = {'cluster_name': self.config.cluster_name,
                   'master_ip': master_instance.private_ip,
                   'master_pub_key': master_pub_key}
-    path = 'playbooks/cluster/worker.yml'
+    path = 'playbooks/worker.yml'
     playbook = pkg_resources.resource_filename(__name__, path)
-    assert(core.RunPlaybookOnHosts(playbook, hostnames, self.ssh_key,
-                                   extra_vars))
+    assert(core.RunPlaybookOnHosts(playbook, hostnames, self.ssh_key, extra_vars))
+           
     num_cores = self.GetNumCoresPerWorker()
     num_map_slots = num_cores
     num_reduce_slots = num_cores - 1 
@@ -863,6 +876,7 @@ class MaprCluster(object, ):
                                  self.config.ubuntu_release_name, 
                                  self.config.mapr_version, 
                                  role,
+                                 self.config.ami_release_name,
                                  self.config.mapr_ami_owner_id)
       assert(ami)    
       number_zone_list = [(1, prefered_master_zone)] 
@@ -895,8 +909,10 @@ class MaprCluster(object, ):
                                  self.config.ubuntu_release_name, 
                                  self.config.mapr_version, 
                                  role,
+                                 self.config.ami_release_name,
                                  self.config.mapr_ami_owner_id)
-      assert(ami)    
+      if not ami:
+        raise RuntimeError('failed to find suitable ami: %s' % self.config)
       number_zone_list = [(1, prefered_master_zone)] 
       ids = self.cluster.launch_and_wait_for_spot_instances(
         price=high_availability_bid_price,
@@ -914,6 +930,7 @@ class MaprCluster(object, ):
         self.config.ubuntu_release_name, 
         self.config.mapr_version, 
         role,
+        self.config.ami_release_name,
         self.config.mapr_ami_owner_id)
       assert(ami)
       new_instances = self.cluster.launch_and_wait_for_demand_instances(
@@ -942,6 +959,7 @@ class MaprCluster(object, ):
                                self.config.ubuntu_release_name, 
                                self.config.mapr_version, 
                                role,
+                               self.config.ami_release_name,
                                self.config.mapr_ami_owner_id)
     assert(ami)
     new_instances = self.cluster.launch_and_wait_for_spot_instances(
@@ -992,7 +1010,7 @@ class MaprCluster(object, ):
   def __FixCachePermissions(self):    
     # Note: tried to move this to the image generation stage, but these
     # paths don't exist because ephemeral devices are created after boot
-    instances = self.__GetAllInstances()
+    instances = self.__GetWorkerInstances()
     mapr_cache_path = '/opt/mapr/logs/cache'
     cmd = "sudo mkdir -p %s; sudo chmod -R 755 %s; sudo mkdir %s/hadoop/; "\
           "sudo mkdir %s/tmp; sudo chmod -R 1777 %s/tmp" % \

@@ -6,9 +6,15 @@
     - name: Setup passwordless ssh from master to workers
       authorized_key: user=root key="$master_pub_key"
     
+    - name: Wait for MapR CLDB to be available on master
+      wait_for: host=$master_ip port=7222 delay=5 timeout=600 # wait up to 10 minutes
+    
     - include: configure_mapr.yml
+    
+    - name: Wait for MapR CLDB to be available on master
+      wait_for: host=$master_ip port=7222 delay=5 timeout=600 # wait up to 10 minutes
       
-    - name: Waiting for task tracker started
+    - name: Waiting for local task tracker started
       wait_for: port=50060  
       
     - name: install gmond.conf

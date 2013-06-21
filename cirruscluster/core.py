@@ -152,14 +152,17 @@ def RunCommandOnHosts(cmd, hostnames, ssh_key):
   """ Executes a command via ssh and sends back the exit status code. """
   if not hostnames:
     return
-  p = multiprocessing.Pool(len(hostnames))
+  p = multiprocessing.Pool(1)
   remote_command_args = [(cmd, hostname, ssh_key) for hostname in hostnames]
+  #print remote_command_args
   result = None
-  try:    
-    result = p.map(__RemoteExecuteHelper, remote_command_args)
-  except:
-    logging.info( 'failure in RunCommandOnHosts...')
-    raise
+  while not result:
+    try:    
+      result = p.map_async(__RemoteExecuteHelper, remote_command_args).get(999999) # allows for keyboard interrupt
+    except paramiko.SSHException as e:      
+      logging.info( 'failure in RunCommandOnHosts: %s' % (e))
+      time.sleep(5)
+    
   p.close()
   p.join()
   return result
@@ -189,7 +192,7 @@ def FileExists(remote_file_path, hostname, ssh_key):
 def __RemoteExecuteHelper(args):
   """ Helper for multiprocessing. """
   cmd, hostname, ssh_key = args
-  Random.atfork()  # needed to fix bug in old python 2.6 interpreters
+  #Random.atfork()  # needed to fix bug in old python 2.6 interpreters
   private_key = paramiko.RSAKey.from_private_key(StringIO.StringIO(ssh_key))
   client = paramiko.SSHClient()
   client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -199,7 +202,7 @@ def __RemoteExecuteHelper(args):
                          allow_agent=False, look_for_keys=False)
           break
       except socket.error as e:
-          # print 'socket timed out...'
+          print 'socket timed out...'
           time.sleep(5)
       except paramiko.AuthenticationException as e:
           print e
@@ -284,9 +287,12 @@ def AmiName(ami_release_name, ubuntu_release_name, virtualization_type,
                                                    mapr_version, role)
   return ami_name
 
+# def LookupCirrusAmi(ec2, instance_type, ubuntu_release_name, mapr_version, role,
+#                     ami_release_name = default_ami_release_name,
+#                     ami_owner_id = default_ami_owner_id):
 def LookupCirrusAmi(ec2, instance_type, ubuntu_release_name, mapr_version, role,
-                    ami_release_name = default_ami_release_name,
-                    ami_owner_id = default_ami_owner_id):
+                    ami_release_name,
+                    ami_owner_id):  
   """ Returns AMI satisfying provided constraints. """
   if not role in valid_instance_roles:
     raise RuntimeError('Specified role (%s) not a valid role: %s' % (role, 
@@ -297,7 +303,7 @@ def LookupCirrusAmi(ec2, instance_type, ubuntu_release_name, mapr_version, role,
   images = ec2.get_all_images(owners=[ami_owner_id])
   ami = None
   ami_name = AmiName(ami_release_name, ubuntu_release_name, virtualization_type,
-                     mapr_version, role)  
+                     mapr_version, role)
   for image in images:
     if image.name == ami_name:
         ami = image

@@ -30,7 +30,10 @@
       
     - name: Setup MapR root user
       command:  maprcli acl edit -type cluster -user root:fc
-        
+    
+    - name: install ganglia config
+      file: path=/etc/ganglia/ state=directory owner=root group=root
+    
     - name: install ganglia config
       template: src=gmetad.conf.j2 dest=/etc/ganglia/gmetad.conf owner=root group=root
     

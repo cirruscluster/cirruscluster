@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+from cirruscluster import core
 
 class CirrusConfig(object):
   """
@@ -33,7 +34,8 @@ class CirrusConfig(object):
     # Default is to use standard ami.  You can set this to your own AWS user
     # account id (only available from AWS management console) to use custom
     # AMI versions you created with ami_cli.py
-    self.mapr_ami_owner_id = None 
+    self.mapr_ami_owner_id = core.default_ami_owner_id
+    self.ami_release_name =  core.default_ami_release_name
     
     # cluster params
     self.cluster_instance_type = 'c1.xlarge'  # ex: c1.xlarge, cc2.8xlarge
@@ -41,10 +43,16 @@ class CirrusConfig(object):
     self.zones = ['b']
     # determines the nfs mount point on desktop /mapr/<cluster_name>
     # and name of cluster set by mapr's configure.sh
-    self.cluster_name = 'iwct'  
-    self.master_on_spot_instances = True
-    self.workers_on_spot_instances = True    
+    self.cluster_name = 'iwct'
+    self.master_on_spot_instances = False
+    self.workers_on_spot_instances = False
     return
+  
+  def __repr__(self):
+    #return '<%s >' % (self.region_name, self.prefered_availability_zone, self.ubuntu_release_name, self.mapr_ami_owner_id, self.cluster_instance_type, self.mapr_version, self.zones, self.cluster_name, master_on_spot_instances, self.workers_on_spot_instances)
+    attrs = vars(self)
+    data =  ', '.join("%s: %s" % item for item in attrs.items())
+    return data
   
 def GetConfiguration():
   conf = CirrusConfig()   

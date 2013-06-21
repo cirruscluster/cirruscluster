@@ -180,7 +180,7 @@ class Ec2Cluster():
  
   def wait_for_instances(self, instance_ids, timeout=600):
     start_time = time.time()
-    
+    reservation = None
     while True:      
       if (time.time() - start_time >= timeout):
         raise TimeoutException()
@@ -188,7 +188,7 @@ class Ec2Cluster():
         reservation = self.ec2.get_all_instances(instance_ids)
         if self._all_started(reservation):
           break
-      # don't timeout for race condition where instance is not yet registered
+      # don't fail for race condition where instance is not yet registered
       except boto_exception.EC2ResponseError:
         pass
       
@@ -364,7 +364,7 @@ class Ec2Cluster():
     return instances  
     
   def get_current_spot_instance_price(self, instance_type, availability_zone):
-    hist = self.ec.get_spot_price_history(start_time=None, 
+    hist = self.ec2.get_spot_price_history(start_time=None, 
                                           end_time=None, 
                                           instance_type=instance_type,
                                           product_description='Linux/UNIX',
