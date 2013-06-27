@@ -202,7 +202,7 @@ def __RemoteExecuteHelper(args):
                          allow_agent=False, look_for_keys=False)
           break
       except socket.error as e:
-          print 'socket timed out...'
+          print '.'
           time.sleep(5)
       except paramiko.AuthenticationException as e:
           print e

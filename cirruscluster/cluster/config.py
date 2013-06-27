@@ -44,8 +44,8 @@ class CirrusConfig(object):
     # determines the nfs mount point on desktop /mapr/<cluster_name>
     # and name of cluster set by mapr's configure.sh
     self.cluster_name = 'iwct'
-    self.master_on_spot_instances = False
-    self.workers_on_spot_instances = False
+    self.master_on_spot_instances = True
+    self.workers_on_spot_instances = True
     return
   
   def __repr__(self):

@@ -1,0 +1,9 @@
+- name: Add the igraph ppa
+  apt_repository: repo=ppa:igraph/ppa
+
+
+- name: Install igraph packages 
+  apt: pkg=$item update_cache=yes
+  with_items:
+     - python-igraph
+

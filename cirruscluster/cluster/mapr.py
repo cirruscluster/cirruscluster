@@ -199,22 +199,20 @@ class MaprCluster(object, ):
         slot_summary[host]['map_slots'] = map_slots
         slot_summary[host]['reduce_slots'] = reudce_slots
       return slot_summary
-#     if property_name == 'cores_summary':    
-#       params = {}
-#       params['columns'] = 'cpus'
-#       #params['filter'] = '[service==tasktracker]'
-#       r = self.__MaprApi('node list', params)
-#       print r
-#       exit(0)
-#       assert(r['status'], 'OK')
-#       cores_summary = []   
-#       prefetch_maptasks = 1.0 #mapreduce.tasktracker.prefetch.maptasks
-#       assert('data' in r)
-#       for item in r['data']:
-#         host = item['ip']
-#         cpus = long(item['cpus']) 
-#         cores_summary.append(cpus)
-#       return cores_summary
+    if property_name == 'cores_summary':    
+      params = {}
+      params['columns'] = 'cpus'
+      #params['filter'] = '[service==tasktracker]'
+      r = self.__MaprApi('node list', params)
+      assert(r['status'] == 'OK')
+      cores_summary = []   
+      prefetch_maptasks = 1.0 #mapreduce.tasktracker.prefetch.maptasks
+      assert('data' in r)
+      for item in r['data']:
+        host = item['ip']
+        cpus = long(item['cpus']) 
+        cores_summary.append(cpus)
+      return cores_summary
     if property_name == 'ram_summary':    
       params = {}
       params['columns'] = 'mtotal'
@@ -804,7 +802,7 @@ class MaprCluster(object, ):
     command_path = '/'.join(command_list)          
     mapr_rest_api_url = 'https://%s:8443/rest/%s' % (master_instance.private_ip,
                                                      command_path)
-    print mapr_rest_api_url
+    #print mapr_rest_api_url
     r = None
     while r == None:
       try:     

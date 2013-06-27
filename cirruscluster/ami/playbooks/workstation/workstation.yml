@@ -11,4 +11,5 @@
     - include: dev_env.yml
     - include: eclipse.yml
     - include: ec2_auth.yml
+    - include: igraph.yml
     - include: mapr.yml
