@@ -24,17 +24,18 @@ class TestCoreFunctions(unittest.TestCase):
 #       random.sample(self.seq, 20)
 #     for element in random.sample(self.seq, 5):
 #       self.assertTrue(element in self.seq)
-            
-  def test_SearchUbuntuAmiDatabase(self):
-    release_name = 'precise'
-    region_name = 'us-east-1'
-    root_store_type = 'ebs'
-    virtualization_type = 'paravirtual'
-    selected_ami = core.SearchUbuntuAmiDatabase(release_name, 
-                                                region_name, 
-                                                root_store_type,
-                                                virtualization_type)
-    self.assertEqual(selected_ami, 'ami-e7582d8e')
+
+#  Bad test... the ami database changes periodically            
+#   def test_SearchUbuntuAmiDatabase(self):
+#     release_name = 'precise'
+#     region_name = 'us-east-1'
+#     root_store_type = 'ebs'
+#     virtualization_type = 'paravirtual'
+#     selected_ami = core.SearchUbuntuAmiDatabase(release_name, 
+#                                                 region_name, 
+#                                                 root_store_type,
+#                                                 virtualization_type)
+#     self.assertEqual(selected_ami, 'ami-e7582d8e')
     
   def test_IsHPCInstanceType(self): 
     self.assertFalse(core.IsHPCInstanceType('c1.xlarge'))
