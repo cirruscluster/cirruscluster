@@ -202,6 +202,13 @@ class Manager(object):
       instance_info.append(InstanceInfo(i.tags['Name'], i.id, i.state, i.public_dns_name))
     return instance_info
 
+  def GetInstanceInfo(self, instance_id):
+    instance = self.__GetInstanceById(instance_id)
+    assert(instance)
+    info = InstanceInfo(instance.tags['Name'], instance.id, instance.state, 
+                        instance.public_dns_name)
+    return info
+
   def TerminateInstance(self, instance_id):
       instance = self.__GetInstanceById(instance_id)
       assert(instance)
@@ -214,6 +221,12 @@ class Manager(object):
       assert(instance)
       self.ec2.stop_instances([instance_id])
       return
+    
+  def StartInstance(self, instance_id):
+      instance = self.__GetInstanceById(instance_id)
+      if instance.state != 'running':
+        instance.start()
+      return    
 
   def CreateInstance(self, workstation_name, instance_type, ubuntu_release_name,
                      mapr_version, ami_release_name, ami_owner_id):

@@ -95,6 +95,12 @@ class Cli(object):
     instance_id = raw_input('Which instance id would you like to stop: ')
     self.manager.StopInstance(instance_id)
     return
+  
+  def StartWorkstation(self):
+    PrintInstances(self.manager)
+    instance_id = raw_input('Which instance id would you like to start: ')
+    self.manager.StartInstance(instance_id)
+    return
 
   def DestroyWorkstation(self):
     PrintInstances(self.manager)
@@ -177,15 +183,17 @@ class Cli(object):
 def main():
   cli = Cli()
   if (len(sys.argv) < 2):
+    
     print """Usage:
-             list
-             connect
-             stop
-             create
-             destroy, 
-             add_volume
-             resize_root
-          """
+         list
+         connect
+         start
+         stop
+         create
+         destroy 
+         add_volume
+         resize_root
+    """
     return 1
   cmd = sys.argv[1]
   
@@ -193,6 +201,8 @@ def main():
     cli.ListWorkstations()
   elif cmd == 'connect':
     cli.ConnectToWorkstation()
+  elif cmd == 'start':
+    cli.StartWorkstation()
   elif cmd == 'stop':
     cli.StopWorkstation()
   elif cmd == 'create':
