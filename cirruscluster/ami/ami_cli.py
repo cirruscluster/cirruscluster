@@ -65,7 +65,7 @@ def main():
   ami_spec = builder.AmiSpecification(ami_release_name, region_name, 
                                       instance_type, ubuntu_release_name, 
                                       mapr_version, role)  
-  keypair_name = 'cirrus_ami_maker_tmp'
+  keypair_name = 'cirrus_ami_maker_tmp1'
   # TODO(heathkh): Change this to use OS specific home directory (win, mac)
   key_dir_path = os.path.expanduser('~/keys/')
   private_key_filename = '%s/%s.pem' % (key_dir_path, keypair_name)

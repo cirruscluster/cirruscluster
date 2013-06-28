@@ -5,3 +5,4 @@
 /dist
 /build
 /distribute-0.6.45.tar.gz
+*.pyc

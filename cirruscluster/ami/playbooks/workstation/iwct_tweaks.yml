@@ -1,0 +1,86 @@
+
+- name: Install gsettings command 
+  apt: pkg=$item
+  with_items:
+     - libglib2.0-bin # provides gsettings
+     - git
+
+- name: Set the background image
+  shell: gsettings set org.gnome.desktop.background picture-uri file:///usr/share/backgrounds/gnome/Stripes.jpg
+  sudo: no
+  
+- name: Copy the eclipse prefs file to the desktop (must manually import it)  
+  copy: src=eclipse_iwct_prefs_v02.epf dest=/home/ubuntu/Desktop/eclipse_prefs_v01.epf owner=ubuntu group=ubuntu
+  sudo: no
+
+- name: checkout snap  
+  git: repo=https://github.com/cmakesnap/snap.git dest=/home/ubuntu/git/snap
+  sudo: no
+  
+- name: checkout iwct  
+  git: repo=https://github.com/heathkh/iwct.git dest=/home/ubuntu/git/iwct
+  sudo: no
+
+- name: install gperftools from source
+  shell: creates=/usr/local/lib/libprofiler.so python /home/ubuntu/git/iwct/snap/install_gperftools.py
+  sudo: no
+  
+- name: install protobuf from source
+  shell: creates=/usr/local/bin/protoc python /home/ubuntu/git/iwct/snap/install_protobuf.py
+  sudo: no  
+
+- name: Create IWCT build dir
+  file: path=/home/ubuntu/git/iwct/build owner=ubuntu group=ubuntu state=directory
+  
+# call cmake several times, ignoring errors  
+- name: config iwct 1 
+  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  sudo: no
+  ignore_errors: yes
+
+- name: config iwct 2
+  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  sudo: no
+  ignore_errors: yes
+
+- name: config iwct 3 
+  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  sudo: no
+  ignore_errors: yes
+  
+- name: config iwct 4 
+  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  sudo: no
+  ignore_errors: yes
+
+# call cmake one last time and check for errors
+- name: config iwct FINAL 
+  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  sudo: no
+  
+- name: build iwct 
+  shell: chdir=/home/ubuntu/git/iwct/build make -j10
+  sudo: no
+  
+- name: create local bin directory
+  file: path=/home/ubuntu/bin owner=ubuntu group=ubuntu state=directory
+  
+- name: symlink pertview binary
+  file: src=/home/ubuntu/git/iwct/build/snap/pert/pertview/pertview  dest=/home/ubuntu/bin/pertview owner=ubuntu group=ubuntu state=link
+  
+- name: symlink iwct_import_dataset binary
+  file: src=/home/ubuntu/git/iwct/build/iw/apps/iwct_import_dataset.py dest=/home/ubuntu/bin/iwct_import_dataset owner=ubuntu group=ubuntu state=link
+  
+- name: symlink iwct_import_dataset binary
+  file: src=/home/ubuntu/git/iwct/build/iw/apps/iwct_run_pipeline.py dest=/home/ubuntu/bin/iwct_run_pipeline owner=ubuntu group=ubuntu state=link  
+  
+- name: checkout cirrus cluster  
+  git: repo=https://github.com/cirruscluster/cirruscluster.git dest=/home/ubuntu/git/cirruscluster
+  sudo: no  
+  
+- name: install cirrus cluster from source 
+  shell: chdir=/home/ubuntu/git/cirruscluster python setup.py develop
+  
+  
+  
+  

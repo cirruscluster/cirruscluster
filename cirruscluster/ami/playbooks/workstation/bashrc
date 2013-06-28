@@ -109,7 +109,7 @@ fi
 
 # User specific environment and startup programs
 
-PATH=${PATH}:${HOME}/local/bin
+PATH=${PATH}:${HOME}/bin:${HOME}/local/bin
 export PATH
 
 export PYTHONPATH="${HOME}/git/iwct/build:${HOME}/git/iwct/build/snap:"

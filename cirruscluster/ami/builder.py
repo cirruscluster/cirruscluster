@@ -191,6 +191,11 @@ class AmiBuilder(object):
     return
    
   def __SecurityScrub(self, instance):
+    
+    # ensure no cirrus keys directory remains (workstation)
+    cmd = 'sudo rm -rf /home/ubuntu/.ec2'
+    assert(core.RunCommandOnHost(cmd, instance.dns_name, self.ssh_key))
+    
     # delete the shell history 
     cmd = 'sudo find /root/.*history /home/*/.*history -exec rm -f {} \\;'
     assert(core.RunCommandOnHost(cmd, instance.dns_name, self.ssh_key))
