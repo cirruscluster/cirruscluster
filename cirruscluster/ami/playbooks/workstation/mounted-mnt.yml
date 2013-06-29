@@ -1,0 +1,4 @@
+
+- name: Add an upstart command to mount /tmp on ephemeral partition (i.e. under /mnt) 
+  copy: src=mounted-mnt.conf dest=/etc/init/mounted-mnt.conf owner=root group=root
+  
