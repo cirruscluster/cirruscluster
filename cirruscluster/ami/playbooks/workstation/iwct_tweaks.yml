@@ -67,6 +67,9 @@
   
 - name: symlink pertview binary
   file: src=/home/ubuntu/git/iwct/build/snap/pert/pertview/pertview  dest=/home/ubuntu/bin/pertview owner=ubuntu group=ubuntu state=link
+
+- name: symlink pertedit binary
+  file: src=/home/ubuntu/git/iwct/build/snap/pert/pertedit/pertedit  dest=/home/ubuntu/bin/pertedit owner=ubuntu group=ubuntu state=link  
   
 - name: symlink iwct_import_dataset binary
   file: src=/home/ubuntu/git/iwct/build/iw/apps/iwct_import_dataset.py dest=/home/ubuntu/bin/iwct_import_dataset owner=ubuntu group=ubuntu state=link
