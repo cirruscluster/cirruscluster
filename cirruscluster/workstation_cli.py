@@ -28,31 +28,33 @@ class Cli(object):
     self.ami_owner_id = None
     self.config_filename = os.path.expanduser('~/.cirrus-workstation')    
     self._LoadConfigFile()
-    if not workstation.IAMUserReady(self.aws_id, self.aws_secret):
-      # try to get root AWS account from AWS default environment variables
-      root_aws_id = os.environ.get('AWS_ACCESS_KEY_ID')
-      root_aws_secret = os.environ.get('AWS_SECRET_ACCESS_KEY')
-      # otherwise, ask the user directly
-      while not root_aws_id or not root_aws_secret:
-        print 'No IAM user configured, please provide your' \
-              ' AWS key id and secret.'
-        root_aws_id = raw_input('ROOT aws key id: ')
-        root_aws_secret = raw_input('ROOT aws key secret: ')
-      iam_user = workstation.InitCirrusIAMUser(root_aws_id, root_aws_secret)
-      self.aws_id, self.aws_secret = iam_user
-    while not self.region:
-      print 'No region has been configured'
-      print 'Please select one: %s' % (core.tested_region_names)
-      region = raw_input('AWS Region: ')
-      while region not in core.tested_region_names:
+    
+    while self.region not in core.tested_region_names:
+      print 'Valid regions are: %s' % (core.tested_region_names)
+      region = raw_input('Which AWS Region do you want to use: ')
+      if region not in core.tested_region_names:
         print 'Invalid region: %s' % (region)
       self.region = region
+    
+    self.manager = None
+    while not self.manager:
+      try:
+        self.manager = workstation.Manager(self.region, self.aws_id,
+                                         self.aws_secret)
+        break
+      except workstation.InvalidAwsCredentials:
+        # try to get root AWS account from AWS default environment variables
+        root_aws_id = os.environ.get('AWS_ACCESS_KEY_ID')
+        root_aws_secret = os.environ.get('AWS_SECRET_ACCESS_KEY')
+        # otherwise, ask the user directly
+        while not root_aws_id or not root_aws_secret:
+          print 'No IAM user configured, please provide your' \
+                ' AWS key id and secret.'
+          root_aws_id = raw_input('ROOT aws key id: ')
+          root_aws_secret = raw_input('ROOT aws key secret: ')
+        iam_user = workstation.InitCirrusIAMUser(root_aws_id, root_aws_secret)
+        self.aws_id, self.aws_secret = iam_user
     self.__SaveConfigFile()
-    if not workstation.IAMUserReady(self.aws_id, self.aws_secret):
-      raise RuntimeError('Invalid credentials. Please delete configuration' \
-                         ' here: %s' % (self.config_filename))
-    self.manager = workstation.Manager(self.region, self.aws_id,
-                                       self.aws_secret)
     return
 
   def ListWorkstations(self):

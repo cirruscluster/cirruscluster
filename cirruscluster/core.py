@@ -352,7 +352,7 @@ def PrivateToPublicOpenSSH(key, host):
   public_key = 'ssh-rsa %s %s' % (hash_string, host)
   return public_key
 
-def InitKeypair(ec2, s3, config_bucket_name, keypair_name, src_region, 
+def InitKeypair(aws_id, aws_secret, ec2, s3, config_bucket_name, keypair_name, src_region, 
                 dst_regions):
   """ 
   Returns the ssh private key for the given keypair name Cirrus created bucket.
@@ -361,12 +361,11 @@ def InitKeypair(ec2, s3, config_bucket_name, keypair_name, src_region,
   ssh_key = None
   # check if a keypair has been created
   config_bucket = s3.lookup(config_bucket_name)
+  if not config_bucket:
+    config_bucket = s3.create_bucket(config_bucket_name, policy='private')  
   keypair = ec2.get_key_pair(keypair_name)
   if keypair:
     # if created, check that private key is available in s3
-    if not config_bucket:
-      config_bucket = s3.create_bucket(config_bucket_name, policy='private')
-
     s3_key = config_bucket.lookup('ssh_key')
     if s3_key:
       ssh_key = s3_key.get_contents_as_string()
@@ -383,14 +382,14 @@ def InitKeypair(ec2, s3, config_bucket_name, keypair_name, src_region,
     k = Key(config_bucket)
     k.key = 'ssh_key'
     k.set_contents_from_string(ssh_key)
-    DistributeKeyToRegions(src_region, dst_regions, private_keypair)
+    DistributeKeyToRegions(src_region, dst_regions, private_keypair, aws_id, aws_secret)
   assert(keypair)
   assert(ssh_key)
   return ssh_key
 
 
 def DistributeKeyToRegions(src_region, dst_regions, private_keypair,
-                           aws_id=None, aws_secret=None):
+                           aws_id, aws_secret):
   """
   Copies the keypair from the src to the dst regions. 
   Note: keypair must be a newly created key... that is the key material is 
@@ -404,8 +403,18 @@ def DistributeKeyToRegions(src_region, dst_regions, private_keypair,
       continue
     logging.info( 'distributing key %s to region %s' % (private_keypair.name,
                                                         dst_region))
-    dst_region_ec2 = boto_ec2.connect_to_region(dst_region,
-      aws_access_key_id=aws_id, aws_secret_access_key=aws_secret)
+    dst_region_ec2 = None
+    # because iam credentials may not have propagated to other regions
+    # this may fail the first few times it is called
+    while not dst_region_ec2:
+      try:
+        dst_region_ec2 = boto_ec2.connect_to_region(dst_region,
+          aws_access_key_id=aws_id, aws_secret_access_key=aws_secret)
+      except boto_exception.NoAuthHandlerFound as e:
+        print 'Login to region %s failed. Will wait and retry' % (dst_region)
+        print e
+        time.sleep(5)
+    
     try:
       dst_region_ec2.delete_key_pair(private_keypair.name)
     except:

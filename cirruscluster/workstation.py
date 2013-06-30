@@ -22,6 +22,7 @@
 
 """ Automates connecting and managing a remote Cirrus Workstation in EC2. """
 
+import boto
 from boto.ec2 import connection as ec2_connection 
 from boto.iam import connection as iam_connection
 from boto.s3 import connection as s3_connection
@@ -47,11 +48,13 @@ def IAMUserReady(iam_aws_id, iam_aws_secret):
   ready = False
   if iam_aws_id and iam_aws_secret:
     try:
-      _ = s3_connection.S3Connection(iam_aws_id, iam_aws_secret)
+      # test that ec2 connection works
+      test_ec2 = ec2_connection.EC2Connection(iam_aws_id, iam_aws_secret)
+      test_ec2.get_all_instances()
       ready = True
     except:
       logging.info( 'failed to connect as user: %s' % (iam_aws_id))
-      raise
+      
   return ready
 
 
@@ -76,14 +79,17 @@ def InitCirrusIAMUser(root_aws_id, root_aws_secret):
     # configuration
     logging.info( 'Created iam role and policy')
     role_name = 'cirrus_workstation'
-    power_user_policy_json = """
-    { "Version": "2012-10-17", 
-      "Statement": [{"Effect": "Allow", 
-                     "NotAction": "iam:*",
-                     "Resource": "*"
-                   }]
-    }
-    """
+    
+    power_user_policy_json = """{
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "NotAction": "iam:*",
+                "Resource": "*"
+            }
+        ]
+    }"""
     # ensure no conflicting role exists with same name
     try:
       iam.remove_role_from_instance_profile(workstation_profile, role_name)
@@ -125,7 +131,7 @@ def InitCirrusIAMUser(root_aws_id, root_aws_secret):
   iam.put_user_policy(cirrus_iam_username, 'power_user_policy', policy_json)
   response = iam.get_all_access_keys(cirrus_iam_username)
   iam_id = None
-  iam_secret = None
+  iam_secret = None  
   for key in response['list_access_keys_response']['list_access_keys_result'] \
                      ['access_key_metadata']:
     if key['status'] == 'Active' and key['user_name'] == cirrus_iam_username:
@@ -144,8 +150,15 @@ def InitCirrusIAMUser(root_aws_id, root_aws_secret):
 
   # part of the credentials is unknown, so make new ones and store those
   if not iam_id or not iam_secret:
+    
     logging.info('Creating new aws credentials for IAM user %s.'\
                   % cirrus_iam_username)
+    
+    # if we have an iam_id but no secret, we must create a new one
+    # we can have at most two, so delete this one to make room
+    if iam_id:
+      iam.delete_access_key(iam_id)
+      
     response = iam.create_access_key(cirrus_iam_username)
     new_key = response['create_access_key_response']\
                       ['create_access_key_result']\
@@ -161,21 +174,49 @@ def InitCirrusIAMUser(root_aws_id, root_aws_secret):
     k.set_contents_from_string(iam_secret)
   return iam_id, iam_secret
 
+
+
+class UnsupportedAwsRegion(Exception):
+  pass
+
+class InvalidAwsCredentials(Exception):
+  pass
+
+
 class Manager(object):
   def __init__(self, region_name, iam_aws_id, iam_aws_secret):
-    assert(region_name)
-    assert(iam_aws_id)
-    assert(iam_aws_secret)
-    print 'iam_aws_id: %s' % (iam_aws_id)
-    print 'iam_aws_secret: %s' % (iam_aws_secret)
+    
+    if not iam_aws_id or not iam_aws_secret:
+      raise InvalidAwsCredentials()
+    
+    if region_name not in core.tested_region_names:
+      raise UnsupportedAwsRegion()
     self.region_name = region_name
     self.iam_aws_id = iam_aws_id
     self.iam_aws_secret = iam_aws_secret
+    assert(len(iam_aws_secret) == 40)
     region = core.GetRegion(region_name)
-    self.ec2 = ec2_connection.EC2Connection(iam_aws_id, iam_aws_secret,
-                                            region = region)
-    
-    
+
+    remaining_retries = 10
+    while remaining_retries:
+      # test that ec2 connection works
+      test_ec2 = ec2_connection.EC2Connection(self.iam_aws_id, 
+                                              self.iam_aws_secret,
+                                              region = region)
+      try:        
+        test_ec2.get_all_images(owners=['self'])  
+        self.ec2 = test_ec2
+      except boto.exception.EC2ResponseError as e:
+        remaining_retries -= 1
+        if e.error_code == 'AuthFailure' and remaining_retries:
+          print self.iam_aws_id   
+          print self.iam_aws_secret                 
+          print 'remaining_retries: %d' % (remaining_retries)
+          time.sleep(2)                
+        else:
+          raise
+        
+      
     self.s3 = s3_connection.S3Connection(iam_aws_id, iam_aws_secret)
     self.workstation_tag = 'cirrus_workstation'
     self.workstation_keypair_name = 'cirrus_workstation'
@@ -184,7 +225,7 @@ class Manager(object):
       (hashlib.md5(iam_aws_id).hexdigest())
     src_region = self.region_name
     dst_regions = core.tested_region_names
-    self.ssh_key = core.InitKeypair(self.ec2, self.s3, config_bucketname, 
+    self.ssh_key = core.InitKeypair(self.iam_aws_id, self.iam_aws_secret, self.ec2, self.s3, config_bucketname, 
                                     self.workstation_keypair_name, src_region,
                                     dst_regions)
     return
@@ -326,8 +367,10 @@ class Manager(object):
     core.WaitForVolumeAttached(new_volume)
 
     # TODO delete the old root volume and the temporary snapshot
-    logging.info( 'you should delete this snapshot: %s' % (snapshot))
-    logging.info( 'you should delete this volume: %s' % (orig_root_volume_id))
+    #logging.info( 'you should delete this snapshot: %s' % (snapshot))
+    self.ec2.delete_snapshot(snapshot)
+    #logging.info( 'you should delete this volume: %s' % (orig_root_volume_id))
+    self.ec2.delete_volume(orig_root_volume_id)
     return
 
   def AddNewVolumeToInstance(self, instance_id, vol_size_gb):
