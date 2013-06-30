@@ -85,7 +85,7 @@
   shell: chdir=/home/ubuntu/git/cirruscluster python setup.py develop
   
   
-- name: make symlink from mapr to desktoo
+- name: make symlink from mapr to desktop
   file: src=/mapr/iwct  dest=/home/ubuntu/Desktop/maprfs owner=ubuntu group=ubuntu state=link
   
   
