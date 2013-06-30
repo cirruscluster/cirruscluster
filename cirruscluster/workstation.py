@@ -156,7 +156,7 @@ def InitCirrusIAMUser(root_aws_id, root_aws_secret):
     iam_hash = hashlib.md5(iam_id).hexdigest()
     cirrus_cred_bucket_key = 'cirrus_iam_sec_%s' % (iam_hash)
     #store secret in s3 for future use
-    k = key.Key(cred_bucket)
+    k = s3_connection.Key(cred_bucket)
     k.key = cirrus_cred_bucket_key
     k.set_contents_from_string(iam_secret)
   return iam_id, iam_secret
@@ -166,12 +166,16 @@ class Manager(object):
     assert(region_name)
     assert(iam_aws_id)
     assert(iam_aws_secret)
+    print 'iam_aws_id: %s' % (iam_aws_id)
+    print 'iam_aws_secret: %s' % (iam_aws_secret)
     self.region_name = region_name
     self.iam_aws_id = iam_aws_id
     self.iam_aws_secret = iam_aws_secret
     region = core.GetRegion(region_name)
     self.ec2 = ec2_connection.EC2Connection(iam_aws_id, iam_aws_secret,
                                             region = region)
+    
+    
     self.s3 = s3_connection.S3Connection(iam_aws_id, iam_aws_secret)
     self.workstation_tag = 'cirrus_workstation'
     self.workstation_keypair_name = 'cirrus_workstation'
