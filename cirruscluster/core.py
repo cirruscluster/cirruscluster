@@ -3,7 +3,8 @@ from Crypto import Random
 from boto import ec2 as boto_ec2
 from boto import exception as boto_exception
 from boto.s3.key import Key
-from boto.ec2 import connection as ec2_connection 
+from boto.ec2 import connection as ec2_connection
+from boto.iam import connection as iam_connection 
 from boto.s3 import connection as s3_connection
 from cirruscluster.ext import ansible
 from cirruscluster.ext.ansible import callbacks
@@ -31,12 +32,14 @@ valid_instance_roles = ['workstation', 'master', 'worker']
 valid_virtualization_types = ['paravirtual', 'hvm']
 hpc_instance_types = ['cc1.4xlarge', 'cc2.8xlarge', 'cr1.8xlarge']
 workstation_security_group = 'cirrus_workstation'
+default_workstation_password = 'cirrus_workstation'
 
 # Users are encouraged to fork cirrus and publish their own amis.
 # Using a github style mode, user-published sets of amis can be used by others
 # by the unique identifer: <ami_owner_id>/<ami_release_name>
 default_ami_owner_id = '925479793144'
 default_ami_release_name = 'latest'
+
 
 ##############################################################################
 # Decorator
@@ -345,6 +348,7 @@ def LookupCirrusAmi(ec2, instance_type, ubuntu_release_name, mapr_version, role,
   virtualization_type = 'paravirtual'
   if IsHPCInstanceType(instance_type):
     virtualization_type = 'hvm'
+  assert(ami_owner_id)  
   images = ec2.get_all_images(owners=[ami_owner_id])
   ami = None
   ami_name = AmiName(ami_release_name, ubuntu_release_name, virtualization_type,
@@ -381,7 +385,6 @@ def CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, region_name):
   """ Retries in case IAM fails because IAM credentials are new and not yet
       propagated to all regions.
   """ 
-  print "CreateTestedEc2Connection..."
   region = GetRegion(region_name)
   ec2_conn = ec2_connection.EC2Connection(iam_aws_id, iam_aws_secret, 
                                           region = region)
@@ -394,12 +397,10 @@ def CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, region_name):
       return False
   except:
     raise
-  
   return ec2_conn
 
 @RetryUntilReturnsTrue(5)
 def CreateTestedS3Connection(iam_aws_id, iam_aws_secret):
-  print "CreateTestedS3Connection..."
   s3_conn = s3_connection.S3Connection(iam_aws_id, iam_aws_secret)
   try:        
     s3_conn.get_all_buckets()
@@ -410,6 +411,20 @@ def CreateTestedS3Connection(iam_aws_id, iam_aws_secret):
   except:
     raise
   return s3_conn
+
+@RetryUntilReturnsTrue(5)
+def CreateTestedIamConnection(iam_aws_id, iam_aws_secret):
+  print "CreateTestedS3Connection..."
+  conn = iam_connection.IAMConnection(iam_aws_id, iam_aws_secret)
+  try:        
+    conn.get_all_users()
+  except boto_exception.IAMResponseError as e:
+    if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
+      print 'iam connect failed... will retry...'
+      return False
+  except:
+    raise
+  return conn
 
 
 
@@ -637,5 +652,8 @@ def GetRootStoreAndVirtualizationType(instance_type):
     root_store_type = 'instance-store'
     virtualization_type = 'paravirtual'
   return  root_store_type, virtualization_type
+
+
+
 
 

@@ -22,16 +22,19 @@ def PrintInstances(manager):
 class Cli(object):
   """ CLI for operations on Cirrus workstations."""
   def __init__(self):
-    self.region = None
     self.aws_id = None
     self.aws_secret = None
-    self.instance_type = None
-    self.ubuntu_release_name = None
-    self.mapr_version = None
-    self.ami_release_name = None
-    self.ami_owner_id = None
+    self.region = 'us-east-1'
+    self.instance_type = 'c1.xlarge'
+    self.ubuntu_release_name = 'precise'
+    self.mapr_version = 'v2.1.3'
+    self.ami_release_name = core.default_ami_release_name
+    self.ami_owner_id = core.default_ami_owner_id
     self.config_filename = os.path.expanduser('~/.cirrus-workstation')    
     self._LoadConfigFile()
+    
+    if not self.ami_owner_id:
+      self.ami_owner_id = core.default_ami_owner_id
     
     while self.region not in core.tested_region_names:
       print 'Valid regions are: %s' % (core.tested_region_names)
@@ -142,26 +145,50 @@ class Cli(object):
     return
 
   def _LoadConfigFile(self):
-    defaults = {'instance_type' : 'c1.xlarge',
-                 'ubuntu_release_name' : 'precise',
-                 'mapr_version' : 'v2.1.3',
-                 'ami_release_name' :  core.default_ami_release_name,
-                 'ami_owner_id' : core.default_ami_owner_id}
-    config = ConfigParser.RawConfigParser(defaults)
+    config = ConfigParser.RawConfigParser()
     config.read(self.config_filename)
-    try:
-      sec = 'credentials'
+    sec = 'credentials'
+    try:    
       self.aws_id = config.get(sec, 'aws_id')
-      self.aws_secret = config.get(sec, 'aws_secret')
-      sec = 'defaults'
-      self.region = config.get(sec, 'region')
-      self.instance_type = config.get(sec, 'instance_type')
-      self.ubuntu_release_name = config.get(sec, 'ubuntu_release_name')
-      self.mapr_version = config.get(sec, 'mapr_version')
-      self.ami_release_name = config.get(sec, 'ami_release_name')
-      self.ami_owner_id = config.get(sec, 'ami_owner_id') 
     except:
       pass
+    
+    try:
+      self.aws_secret = config.get(sec, 'aws_secret')
+    except:
+      pass
+      
+    sec = 'defaults'
+    try:
+      self.region = config.get(sec, 'region')
+    except:
+      pass
+    
+    try:
+      self.instance_type = config.get(sec, 'instance_type')
+    except:
+      pass
+    
+    try:
+      self.ubuntu_release_name = config.get(sec, 'ubuntu_release_name')
+    except:
+      pass
+    
+    try:
+      self.mapr_version = config.get(sec, 'mapr_version')
+    except:
+      pass
+    
+    try:
+      self.ami_release_name = config.get(sec, 'ami_release_name')
+    except:
+      pass
+    
+    try:
+      self.ami_owner_id = config.get(sec, 'ami_owner_id')
+    except:
+      pass   
+    
     return
 
   def __SaveConfigFile(self):
