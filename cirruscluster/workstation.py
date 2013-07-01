@@ -185,50 +185,65 @@ class InvalidAwsCredentials(Exception):
 
 class Manager(object):
   def __init__(self, region_name, iam_aws_id, iam_aws_secret):
-    
     if not iam_aws_id or not iam_aws_secret:
       raise InvalidAwsCredentials()
-    
     if region_name not in core.tested_region_names:
       raise UnsupportedAwsRegion()
     self.region_name = region_name
     self.iam_aws_id = iam_aws_id
-    self.iam_aws_secret = iam_aws_secret
-    assert(len(iam_aws_secret) == 40)
-    region = core.GetRegion(region_name)
-
-    remaining_retries = 10
-    while remaining_retries:
-      # test that ec2 connection works
-      test_ec2 = ec2_connection.EC2Connection(self.iam_aws_id, 
-                                              self.iam_aws_secret,
-                                              region = region)
-      try:        
-        test_ec2.get_all_images(owners=['self'])  
-        self.ec2 = test_ec2
-      except boto.exception.EC2ResponseError as e:
-        remaining_retries -= 1
-        if e.error_code == 'AuthFailure' and remaining_retries:
-          print self.iam_aws_id   
-          print self.iam_aws_secret                 
-          print 'remaining_retries: %d' % (remaining_retries)
-          time.sleep(2)                
-        else:
-          raise
-        
-      
-    self.s3 = s3_connection.S3Connection(iam_aws_id, iam_aws_secret)
+    self.iam_aws_secret = iam_aws_secret    
+    self.ec2 = None
+    self.ec2 = core.CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, 
+                                              region_name)
+    self.s3 = core.CreateTestedS3Connection(iam_aws_id, iam_aws_secret)
+    if not self.ec2 or not self.s3:
+      raise InvalidAwsCredentials()    
     self.workstation_tag = 'cirrus_workstation'
     self.workstation_keypair_name = 'cirrus_workstation'
     self.ssh_key = None
-    config_bucketname = 'cirrus_workstation_config_%s' % \
-      (hashlib.md5(iam_aws_id).hexdigest())
+    tmp_hash = hashlib.md5(iam_aws_id).hexdigest()    
+    config_bucketname = 'cirrus_workstation_config_%s' % tmp_hash      
     src_region = self.region_name
     dst_regions = core.tested_region_names
-    self.ssh_key = core.InitKeypair(self.iam_aws_id, self.iam_aws_secret, self.ec2, self.s3, config_bucketname, 
+    self.ssh_key = core.InitKeypair(self.iam_aws_id, self.iam_aws_secret, 
+                                    self.ec2, self.s3, config_bucketname, 
                                     self.workstation_keypair_name, src_region,
                                     dst_regions)
     return
+
+
+#  @core.RetryUntilReturnsTrue(tries=5)
+#  def __CreateValidatedConnections(self):
+#    """ Retries in case IAM fails because IAM credentials are new and not yet
+#        propagated to all regions.
+#    """ 
+#    region = core.GetRegion(self.region_name)
+#    # test that ec2 connection works
+#    test_ec2 = ec2_connection.EC2Connection(self.iam_aws_id, 
+#                                            self.iam_aws_secret,
+#                                            region = region)
+#    try:        
+#      test_ec2.get_all_images(owners=['self'])      
+#    except boto.exception.EC2ResponseError as e:
+#      if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
+#        print 'ec2 connect failed... will retry...'
+#        return False
+#    except:
+#      raise
+#    
+#    test_s3 = s3_connection.S3Connection(self.iam_aws_id, 
+#                                         self.iam_aws_secret)
+#    try:        
+#      test_s3.get_all_buckets()      
+#    except boto.exception.S3ResponseError as e:
+#      if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
+#        print 's3 connect failed... will retry...'
+#        return False
+#    except:
+#      raise    
+#    self.ec2 = test_ec2
+#    self.s3 = test_s3
+#    return True
 
   def Debug(self):
     res = self.ec2.get_all_instances(instance_ids=['i-db6da8b4'])
