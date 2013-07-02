@@ -5,9 +5,10 @@
      - libglib2.0-bin # provides gsettings
      - git
 
-- name: Set the background image
-  shell: gsettings set org.gnome.desktop.background picture-uri file:///usr/share/backgrounds/gnome/Stripes.jpg
-  sudo: no
+# broken... need to set the DBUS_SESSION_BUS_ADDRESS: http://ubuntuforums.org/showthread.php?t=1059023
+#- name: Set the background image
+#  shell: gsettings set org.gnome.desktop.background picture-uri file:///usr/share/backgrounds/gnome/Stripes.jpg
+#  sudo: no
   
 - name: Copy the eclipse prefs file to the desktop (must manually import it)  
   copy: src=eclipse_iwct_prefs_v02.epf dest=/home/ubuntu/Desktop/eclipse_prefs_v01.epf owner=ubuntu group=ubuntu
@@ -34,28 +35,28 @@
   
 # call cmake several times, ignoring errors  
 - name: config iwct 1 
-  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -Dcmakesnap_DIR=/home/ubuntu/git/snap
   sudo: no
   ignore_errors: yes
 
 - name: config iwct 2
-  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -Dcmakesnap_DIR=/home/ubuntu/git/snap
   sudo: no
   ignore_errors: yes
 
 - name: config iwct 3 
-  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -Dcmakesnap_DIR=/home/ubuntu/git/snap
   sudo: no
   ignore_errors: yes
   
 - name: config iwct 4 
-  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -Dcmakesnap_DIR=/home/ubuntu/git/snap
   sudo: no
   ignore_errors: yes
 
 # call cmake one last time and check for errors
 - name: config iwct FINAL 
-  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo
+  shell: chdir=/home/ubuntu/git/iwct/build cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -Dcmakesnap_DIR=/home/ubuntu/git/snap
   sudo: no
   
 - name: build iwct 
@@ -83,10 +84,16 @@
   
 - name: install cirrus cluster from source 
   shell: chdir=/home/ubuntu/git/cirruscluster python setup.py develop
+  ignore_errors: yes
+
+- name: make sure Desktop directory exists
+  file: path=/home/ubuntu/Desktop owner=ubuntu group=ubuntu state=directory
   
-  
+
+# Can't use file module because src of link doesn't yet exist... symlink is dangling until maprfs mounted
 - name: make symlink from mapr to desktop
-  file: src=/mapr/iwct  dest=/home/ubuntu/Desktop/maprfs owner=ubuntu group=ubuntu state=link
+  shell: ln -s /mapr/iwct /home/ubuntu/Desktop/maprfs
+  sudo: no
   
   
   

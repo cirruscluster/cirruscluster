@@ -61,7 +61,12 @@ def main():
                                            'hvm' : 'cc2.8xlarge'}
     instance_type = virt_type_to_instance_template_type[virt_type]
   assert(instance_type)
-  ec2 = connection.EC2Connection(region = core.GetRegion(region_name))
+  ec2 = None
+  try:
+    ec2 = connection.EC2Connection(region = core.GetRegion(region_name))
+  except boto.exception.NoAuthHandlerFound:
+    print 'Can not authenticate.  Make sure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY env variables are set!'   
+  
   ami_spec = builder.AmiSpecification(ami_release_name, region_name, 
                                       instance_type, ubuntu_release_name, 
                                       mapr_version, role)  

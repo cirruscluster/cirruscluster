@@ -3,6 +3,9 @@ from Crypto import Random
 from boto import ec2 as boto_ec2
 from boto import exception as boto_exception
 from boto.s3.key import Key
+from boto.ec2 import connection as ec2_connection
+from boto.iam import connection as iam_connection 
+from boto.s3 import connection as s3_connection
 from cirruscluster.ext import ansible
 from cirruscluster.ext.ansible import callbacks
 from cirruscluster.ext.ansible import inventory as ansible_inventory
@@ -29,12 +32,57 @@ valid_instance_roles = ['workstation', 'master', 'worker']
 valid_virtualization_types = ['paravirtual', 'hvm']
 hpc_instance_types = ['cc1.4xlarge', 'cc2.8xlarge', 'cr1.8xlarge']
 workstation_security_group = 'cirrus_workstation'
+default_workstation_password = 'cirrus_workstation'
 
 # Users are encouraged to fork cirrus and publish their own amis.
 # Using a github style mode, user-published sets of amis can be used by others
 # by the unique identifer: <ami_owner_id>/<ami_release_name>
 default_ami_owner_id = '925479793144'
 default_ami_release_name = 'latest'
+
+
+##############################################################################
+# Decorator
+##############################################################################
+
+# Retry decorator with exponential backoff
+def RetryUntilReturnsTrue(tries, delay=3, backoff=2):
+  '''Retries a function or method until it returns True.
+
+  delay sets the initial delay in seconds, and backoff sets the factor by which
+  the delay should lengthen after each failure. backoff must be greater than 1,
+  or else it isn't really a backoff. tries must be at least 0, and delay
+  greater than 0.'''
+
+  if backoff <= 1:
+    raise ValueError("backoff must be greater than 1")
+
+  tries = math.floor(tries)
+  if tries < 0:
+    raise ValueError("tries must be 0 or greater")
+
+  if delay <= 0:
+    raise ValueError("delay must be greater than 0")
+
+  def deco_retry(f):
+    def f_retry(*args, **kwargs):
+      mtries, mdelay = tries, delay # make mutable
+
+      rv = f(*args, **kwargs) # first attempt
+      while mtries > 0:
+        if rv: # Done on success
+          return rv
+
+        mtries -= 1      # consume an attempt
+        time.sleep(mdelay) # wait...
+        mdelay *= backoff  # make future wait longer
+       
+        rv = f(*args, **kwargs) # Try again
+
+      return False # Ran out of tries :-(
+
+    return f_retry # true decorator -> decorated function
+  return deco_retry  # @retry(arg[, ...]) -> true decorator
 
 ################################################################################
 # Ansible helper functions
@@ -300,6 +348,7 @@ def LookupCirrusAmi(ec2, instance_type, ubuntu_release_name, mapr_version, role,
   virtualization_type = 'paravirtual'
   if IsHPCInstanceType(instance_type):
     virtualization_type = 'hvm'
+  assert(ami_owner_id)  
   images = ec2.get_all_images(owners=[ami_owner_id])
   ami = None
   ami_name = AmiName(ami_release_name, ubuntu_release_name, virtualization_type,
@@ -313,6 +362,7 @@ def LookupCirrusAmi(ec2, instance_type, ubuntu_release_name, mapr_version, role,
 ###############################################################################
 # EC2 Helpers
 ###############################################################################
+
 
 def GetRegion(region_name):
   """ Converts region name string into boto Region object. """
@@ -329,6 +379,53 @@ def GetRegion(region_name):
     logging.info( 'Try one of these:\n %s' % ('\n'.join(valid_region_names)))
     assert(False)
   return  region
+
+@RetryUntilReturnsTrue(5)
+def CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, region_name):
+  """ Retries in case IAM fails because IAM credentials are new and not yet
+      propagated to all regions.
+  """ 
+  region = GetRegion(region_name)
+  ec2_conn = ec2_connection.EC2Connection(iam_aws_id, iam_aws_secret, 
+                                          region = region)
+  # test that ec2 connection works
+  try:        
+    ec2_conn.get_all_images(owners=['self'])      
+  except boto_exception.EC2ResponseError as e:
+    if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
+      print 'ec2 connect failed... will retry...'
+      return False
+  except:
+    raise
+  return ec2_conn
+
+@RetryUntilReturnsTrue(5)
+def CreateTestedS3Connection(iam_aws_id, iam_aws_secret):
+  s3_conn = s3_connection.S3Connection(iam_aws_id, iam_aws_secret)
+  try:        
+    s3_conn.get_all_buckets()
+  except boto_exception.S3ResponseError as e:
+    if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
+      print 's3 connect failed... will retry...'
+      return False
+  except:
+    raise
+  return s3_conn
+
+@RetryUntilReturnsTrue(5)
+def CreateTestedIamConnection(iam_aws_id, iam_aws_secret):
+  print "CreateTestedS3Connection..."
+  conn = iam_connection.IAMConnection(iam_aws_id, iam_aws_secret)
+  try:        
+    conn.get_all_users()
+  except boto_exception.IAMResponseError as e:
+    if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
+      print 'iam connect failed... will retry...'
+      return False
+  except:
+    raise
+  return conn
+
 
 
 def PrivateToPublicOpenSSH(key, host):
@@ -375,14 +472,15 @@ def InitKeypair(aws_id, aws_secret, ec2, s3, config_bucket_name, keypair_name, s
     if keypair:
       ec2.delete_key_pair(keypair_name)
 
+    print 'recreating keypair: %s' % (keypair_name)
     # create new key in current region_name
-    private_keypair = ec2.create_key_pair(keypair_name)
-    ssh_key = private_keypair.material
+    keypair = ec2.create_key_pair(keypair_name)
+    ssh_key = keypair.material
     # store key in s3
     k = Key(config_bucket)
     k.key = 'ssh_key'
     k.set_contents_from_string(ssh_key)
-    DistributeKeyToRegions(src_region, dst_regions, private_keypair, aws_id, aws_secret)
+    DistributeKeyToRegions(src_region, dst_regions, keypair, aws_id, aws_secret)
   assert(keypair)
   assert(ssh_key)
   return ssh_key
@@ -403,18 +501,8 @@ def DistributeKeyToRegions(src_region, dst_regions, private_keypair,
       continue
     logging.info( 'distributing key %s to region %s' % (private_keypair.name,
                                                         dst_region))
-    dst_region_ec2 = None
-    # because iam credentials may not have propagated to other regions
-    # this may fail the first few times it is called
-    while not dst_region_ec2:
-      try:
-        dst_region_ec2 = boto_ec2.connect_to_region(dst_region,
-          aws_access_key_id=aws_id, aws_secret_access_key=aws_secret)
-      except boto_exception.NoAuthHandlerFound as e:
-        print 'Login to region %s failed. Will wait and retry' % (dst_region)
-        print e
-        time.sleep(5)
-    
+    dst_region_ec2 = CreateTestedEc2Connection(aws_id, aws_secret,
+                                                    dst_region)
     try:
       dst_region_ec2.delete_key_pair(private_keypair.name)
     except:
@@ -565,38 +653,7 @@ def GetRootStoreAndVirtualizationType(instance_type):
     virtualization_type = 'paravirtual'
   return  root_store_type, virtualization_type
 
-##############################################################################
-# Decorator
-##############################################################################
 
-# Retry decorator with exponential backoff
-def RetryUntilReturnsTrue(tries, delay=3, backoff=2):
-  """Retries a function or method until it returns True.
-  delay sets the initial delay in seconds, and backoff sets the factor by which
-  the delay should lengthen after each failure. backoff must be greater than 1,
-  or else it isn't really a backoff. tries must be at least 0, and delay
-  greater than 0.
-  """
-  if backoff <= 1:
-    raise ValueError("backoff must be greater than 1")
-  tries = math.floor(tries)
-  if tries < 0:
-    raise ValueError("tries must be 0 or greater")
-  if delay <= 0:
-    raise ValueError("delay must be greater than 0")
 
-  def deco_retry(f):
-    def f_retry(*args, **kwargs):
-      mtries, mdelay = tries, delay  # make mutable
-      rv = f(*args, **kwargs)  # first attempt
-      while mtries > 0:
-        if rv is True:  # Done on success
-          return True
-        mtries -= 1  # consume an attempt
-        time.sleep(mdelay)  # wait...
-        mdelay *= backoff  # make future wait longer
-        rv = f(*args, **kwargs)  # Try again
-        return False  # Ran out of tries :-(
-      return f_retry  # true decorator -> decorated function
-    
-  return deco_retry  # @retry(arg[, ...]) -> true decorator
+
+

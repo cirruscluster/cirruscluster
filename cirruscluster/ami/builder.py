@@ -157,7 +157,8 @@ class AmiBuilder(object):
     logging.info('Configuring a workstation...')
     playbook = pkg_resources.resource_filename(__name__, 
       'playbooks/workstation/workstation.yml')
-    extra_vars = {'mapr_version' : self.ami_spec.mapr_version}
+    extra_vars = {'mapr_version' : self.ami_spec.mapr_version,
+                  'ubuntu_password': core.default_workstation_password}
     assert(core.RunPlaybookOnHost(playbook, instance.dns_name, self.ssh_key, 
                                   extra_vars = extra_vars))
     

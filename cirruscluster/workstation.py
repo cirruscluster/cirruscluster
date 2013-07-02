@@ -23,6 +23,7 @@
 """ Automates connecting and managing a remote Cirrus Workstation in EC2. """
 
 import boto
+from cirruscluster.ext.nx import password
 from boto.ec2 import connection as ec2_connection 
 from boto.iam import connection as iam_connection
 from boto.s3 import connection as s3_connection
@@ -63,8 +64,13 @@ def InitCirrusIAMUser(root_aws_id, root_aws_secret):
   Given a user's root aws credentials, setup the IAM user environment that
   can be used later for all future api actions.
   """
-  iam = iam_connection.IAMConnection(root_aws_id, root_aws_secret)
-  s3 = s3_connection.S3Connection(root_aws_id, root_aws_secret)
+  #iam = iam_connection.IAMConnection(root_aws_id, root_aws_secret)
+  #s3 = s3_connection.S3Connection(root_aws_id, root_aws_secret)
+  
+  iam = core.CreateTestedIamConnection(root_aws_id, root_aws_secret)
+  s3 = core.CreateTestedS3Connection(root_aws_id, root_aws_secret)
+  
+  
   cirrus_iam_username = 'cirrus'
   bucketname = 'cirrus_iam_config_%s' % (hashlib.md5(root_aws_id).hexdigest())
   has_cirrus_user = False
@@ -150,14 +156,12 @@ def InitCirrusIAMUser(root_aws_id, root_aws_secret):
 
   # part of the credentials is unknown, so make new ones and store those
   if not iam_id or not iam_secret:
-    
     logging.info('Creating new aws credentials for IAM user %s.'\
                   % cirrus_iam_username)
-    
-    # if we have an iam_id but no secret, we must create a new one
-    # we can have at most two, so delete this one to make room
-    if iam_id:
-      iam.delete_access_key(iam_id)
+    # Delete any existing acces keys (to prevent from exceeding limit of 2)
+    res = iam.get_all_access_keys(cirrus_iam_username)
+    for key_metadata in res['list_access_keys_response']['list_access_keys_result']['access_key_metadata']:
+      iam.delete_access_key(key_metadata.access_key_id, user_name = cirrus_iam_username)
       
     response = iam.create_access_key(cirrus_iam_username)
     new_key = response['create_access_key_response']\
@@ -185,50 +189,65 @@ class InvalidAwsCredentials(Exception):
 
 class Manager(object):
   def __init__(self, region_name, iam_aws_id, iam_aws_secret):
-    
     if not iam_aws_id or not iam_aws_secret:
       raise InvalidAwsCredentials()
-    
     if region_name not in core.tested_region_names:
       raise UnsupportedAwsRegion()
     self.region_name = region_name
     self.iam_aws_id = iam_aws_id
-    self.iam_aws_secret = iam_aws_secret
-    assert(len(iam_aws_secret) == 40)
-    region = core.GetRegion(region_name)
-
-    remaining_retries = 10
-    while remaining_retries:
-      # test that ec2 connection works
-      test_ec2 = ec2_connection.EC2Connection(self.iam_aws_id, 
-                                              self.iam_aws_secret,
-                                              region = region)
-      try:        
-        test_ec2.get_all_images(owners=['self'])  
-        self.ec2 = test_ec2
-      except boto.exception.EC2ResponseError as e:
-        remaining_retries -= 1
-        if e.error_code == 'AuthFailure' and remaining_retries:
-          print self.iam_aws_id   
-          print self.iam_aws_secret                 
-          print 'remaining_retries: %d' % (remaining_retries)
-          time.sleep(2)                
-        else:
-          raise
-        
-      
-    self.s3 = s3_connection.S3Connection(iam_aws_id, iam_aws_secret)
+    self.iam_aws_secret = iam_aws_secret    
+    self.ec2 = None
+    self.ec2 = core.CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, 
+                                              region_name)
+    self.s3 = core.CreateTestedS3Connection(iam_aws_id, iam_aws_secret)
+    if not self.ec2 or not self.s3:
+      raise InvalidAwsCredentials()    
     self.workstation_tag = 'cirrus_workstation'
     self.workstation_keypair_name = 'cirrus_workstation'
     self.ssh_key = None
-    config_bucketname = 'cirrus_workstation_config_%s' % \
-      (hashlib.md5(iam_aws_id).hexdigest())
+    tmp_hash = hashlib.md5(iam_aws_id).hexdigest()    
+    config_bucketname = 'cirrus_workstation_config_%s' % tmp_hash      
     src_region = self.region_name
     dst_regions = core.tested_region_names
-    self.ssh_key = core.InitKeypair(self.iam_aws_id, self.iam_aws_secret, self.ec2, self.s3, config_bucketname, 
+    self.ssh_key = core.InitKeypair(self.iam_aws_id, self.iam_aws_secret, 
+                                    self.ec2, self.s3, config_bucketname, 
                                     self.workstation_keypair_name, src_region,
                                     dst_regions)
     return
+
+
+#  @core.RetryUntilReturnsTrue(tries=5)
+#  def __CreateValidatedConnections(self):
+#    """ Retries in case IAM fails because IAM credentials are new and not yet
+#        propagated to all regions.
+#    """ 
+#    region = core.GetRegion(self.region_name)
+#    # test that ec2 connection works
+#    test_ec2 = ec2_connection.EC2Connection(self.iam_aws_id, 
+#                                            self.iam_aws_secret,
+#                                            region = region)
+#    try:        
+#      test_ec2.get_all_images(owners=['self'])      
+#    except boto.exception.EC2ResponseError as e:
+#      if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
+#        print 'ec2 connect failed... will retry...'
+#        return False
+#    except:
+#      raise
+#    
+#    test_s3 = s3_connection.S3Connection(self.iam_aws_id, 
+#                                         self.iam_aws_secret)
+#    try:        
+#      test_s3.get_all_buckets()      
+#    except boto.exception.S3ResponseError as e:
+#      if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
+#        print 's3 connect failed... will retry...'
+#        return False
+#    except:
+#      raise    
+#    self.ec2 = test_ec2
+#    self.s3 = test_s3
+#    return True
 
   def Debug(self):
     res = self.ec2.get_all_instances(instance_ids=['i-db6da8b4'])
@@ -280,7 +299,9 @@ class Manager(object):
                                mapr_version, role, ami_release_name, 
                                ami_owner_id)
     if not ami:
-      raise RuntimeError('Failed to find a suitable ami')
+      args = [workstation_name, instance_type, ubuntu_release_name,
+                     mapr_version, ami_release_name, ami_owner_id]
+      raise RuntimeError('Failed to find a suitable ami: %s' % (args))
     self.__CreateWorkstationSecurityGroup() # ensure the security group exists
     # find the IAM Policy Profile
     logging.info( 'Attempting to launch instance with ami: %s' % (ami.id))
@@ -426,7 +447,11 @@ class Manager(object):
                                   instance.public_dns_name, self.ssh_key)
     assert(nx_key)
     assert(instance.state == 'running')
-    params = {'public_dns_name' : instance.public_dns_name, 'nx_key' : nx_key}
+    nx_scrambled_password = password.ScrambleString(core.default_workstation_password)
+    params = {'public_dns_name' : instance.public_dns_name,
+              'nx_key' : nx_key,
+              'nx_scrambled_password' : nx_scrambled_password,
+              }
     config_content = string.Template(GetNxsTemplate()).substitute(params)
     # TODO(heathkh): Once this operation is performed at ami creatio ntime, 
     # this shouldn't be needed at login time
@@ -623,7 +648,7 @@ def GetNxsTemplate():
   <option key="Disable SHM" value="false" />
   <option key="Disable emulate shared pixmaps" value="false" />
   <option key="Link speed" value="adsl" />
-  <option key="Remember password" value="false" />
+  <option key="Remember password" value="true" />
   <option key="Resolution" value="available" />
   <option key="Resolution height" value="600" />
   <option key="Resolution width" value="800" />
@@ -662,13 +687,13 @@ def GetNxsTemplate():
   <option key="VNC images compression" value="3" />
   </group>
   <group name="Login" >
-  <option key="Auth" value="EMPTY_PASSWORD" />
+  <option key="Auth" value="${nx_scrambled_password}" />
+  <option key="User" value="ubuntu" />
   <option key="Guest Mode" value="false" />
   <option key="Guest password" value="" />
   <option key="Guest username" value="" />
-  <option key="Login Method" value="nx" />
   <option key="Public Key" value="${nx_key}" />
-  <option key="User" value="ubuntu" />
+  <option key="Login Method" value="nx" />
   </group>
   <group name="Services" >
   <option key="Audio" value="false" />
