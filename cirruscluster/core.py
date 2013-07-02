@@ -380,7 +380,20 @@ def GetRegion(region_name):
     assert(False)
   return  region
 
-@RetryUntilReturnsTrue(5)
+
+
+def CredentialsValid(aws_id, aws_secret):
+  valid = False
+  try:
+    ec2_conn = ec2_connection.EC2Connection(aws_id, aws_secret)        
+    ec2_conn.get_all_images(owners=['self'])
+    valid = True      
+  except boto_exception.BotoServerError:
+    pass
+  return valid
+    
+
+@RetryUntilReturnsTrue(3)
 def CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, region_name):
   """ Retries in case IAM fails because IAM credentials are new and not yet
       propagated to all regions.
@@ -399,7 +412,7 @@ def CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, region_name):
     raise
   return ec2_conn
 
-@RetryUntilReturnsTrue(5)
+@RetryUntilReturnsTrue(3)
 def CreateTestedS3Connection(iam_aws_id, iam_aws_secret):
   s3_conn = s3_connection.S3Connection(iam_aws_id, iam_aws_secret)
   try:        
@@ -412,13 +425,12 @@ def CreateTestedS3Connection(iam_aws_id, iam_aws_secret):
     raise
   return s3_conn
 
-@RetryUntilReturnsTrue(5)
+@RetryUntilReturnsTrue(3)
 def CreateTestedIamConnection(iam_aws_id, iam_aws_secret):
-  print "CreateTestedS3Connection..."
   conn = iam_connection.IAMConnection(iam_aws_id, iam_aws_secret)
   try:        
     conn.get_all_users()
-  except boto_exception.IAMResponseError as e:
+  except boto_exception.BotoServerError as e:
     if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
       print 'iam connect failed... will retry...'
       return False

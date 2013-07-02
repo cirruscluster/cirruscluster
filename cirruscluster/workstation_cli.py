@@ -211,7 +211,7 @@ class Cli(object):
     config.write(f)
     return
 
-  def __Debug(self):
+  def Debug(self):
     self.manager.Debug()
     return
 

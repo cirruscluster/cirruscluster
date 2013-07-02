@@ -3,14 +3,13 @@ from setuptools import find_packages
 
 setup(
   name='cirruscluster',
-  version='0.0.1-8', # use semantic version conventions
+  version='0.0.1-11', # use semantic version conventions
   packages= find_packages(),
   license='MIT',
   #long_description=open('README.md').read(),
   install_requires=['distribute>=0.6.45',
                     'passlib>=1.6.1',
                     'paramiko>=1.10.1', 
-                    'docutils>=0.3', 
                     'boto>=2.9.5',                    
                     'pyyaml>=3.10',
                     'Jinja2>=2.7',                    
@@ -28,7 +27,7 @@ setup(
    ]
   },
   author = "Kyle Heath",
-  author_email = "heathkh@gmail.com",
+  author_email = "cirruscluster@gmail.com",
   description = "A batteries-included MapReduce cluster-in-a-can for scientists, researchers, and engineers.",
   keywords = "hadoop MapR mapreduce cluster cloud",
   url = "https://github.com/heathkh/cirruscluster",   # project home page, if any    

@@ -250,10 +250,18 @@ class Manager(object):
 #    return True
 
   def Debug(self):
-    res = self.ec2.get_all_instances(instance_ids=['i-db6da8b4'])
-    test_instance = res[0].instances[0]
-    print test_instance.public_dns_name
-    core.WaitForHostsReachable([test_instance.public_dns_name], self.ssh_key)
+    res = self.ec2.get_all_instances(instance_ids=['i-b65fbbda'])
+    instance = res[0].instances[0]
+    
+    params = {'InstanceId' : instance.id,
+              'BlockDeviceMapping.1.DeviceName' : '/dev/sda1',
+              'BlockDeviceMapping.1.Ebs.VolumeId' : 'vol-c3516299',
+              'BlockDeviceMapping.1.Ebs.DeleteOnTermination' : 'true'}
+    instance.connection.get_status('ModifyInstanceAttribute', params, verb='POST')
+    instance.update()
+    
+    
+    
     return
   
   def ListInstances(self):
@@ -386,12 +394,21 @@ class Manager(object):
     # Attach the new volume as the root device
     new_volume.attach(instance_id, '/dev/sda1')
     core.WaitForVolumeAttached(new_volume)
-
-    # TODO delete the old root volume and the temporary snapshot
-    #logging.info( 'you should delete this snapshot: %s' % (snapshot))
-    self.ec2.delete_snapshot(snapshot)
-    #logging.info( 'you should delete this volume: %s' % (orig_root_volume_id))
+    snapshot.delete()
     self.ec2.delete_volume(orig_root_volume_id)
+    
+    dot_value = 'false'
+    if orig_root_volume_termination_setting:
+      dot_value = 'true'
+    
+    # restore the del on terminate property
+    params = {'InstanceId' : instance.id,
+              'BlockDeviceMapping.1.DeviceName' : '/dev/sda1',
+              'BlockDeviceMapping.1.Ebs.VolumeId' : new_volume.id,
+              'BlockDeviceMapping.1.Ebs.DeleteOnTermination' : dot_value}
+    instance.connection.get_status('ModifyInstanceAttribute', params, verb='POST')
+    instance.update()
+    
     return
 
   def AddNewVolumeToInstance(self, instance_id, vol_size_gb):
