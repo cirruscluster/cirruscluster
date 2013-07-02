@@ -461,6 +461,7 @@ def PrivateToPublicOpenSSH(key, host):
   public_key = 'ssh-rsa %s %s' % (hash_string, host)
   return public_key
 
+@RetryUntilReturnsTrue(4)
 def InitKeypair(aws_id, aws_secret, ec2, s3, config_bucket_name, keypair_name, src_region, 
                 dst_regions):
   """ 
@@ -468,31 +469,35 @@ def InitKeypair(aws_id, aws_secret, ec2, s3, config_bucket_name, keypair_name, s
   Creates the keypair if it doesn't yet exist and stores private key in S3. 
   """
   ssh_key = None
-  # check if a keypair has been created
-  config_bucket = s3.lookup(config_bucket_name)
-  if not config_bucket:
-    config_bucket = s3.create_bucket(config_bucket_name, policy='private')  
-  keypair = ec2.get_key_pair(keypair_name)
-  if keypair:
-    # if created, check that private key is available in s3
-    s3_key = config_bucket.lookup('ssh_key')
-    if s3_key:
-      ssh_key = s3_key.get_contents_as_string()
-
-  # if the private key is not created or not available in s3, recreate it
-  if not ssh_key:
+  try:
+    # check if a keypair has been created
+    config_bucket = s3.lookup(config_bucket_name)
+    if not config_bucket:
+      config_bucket = s3.create_bucket(config_bucket_name, policy='private')  
+    keypair = ec2.get_key_pair(keypair_name)
     if keypair:
-      ec2.delete_key_pair(keypair_name)
-
-    print 'recreating keypair: %s' % (keypair_name)
-    # create new key in current region_name
-    keypair = ec2.create_key_pair(keypair_name)
-    ssh_key = keypair.material
-    # store key in s3
-    k = Key(config_bucket)
-    k.key = 'ssh_key'
-    k.set_contents_from_string(ssh_key)
-    DistributeKeyToRegions(src_region, dst_regions, keypair, aws_id, aws_secret)
+      # if created, check that private key is available in s3
+      s3_key = config_bucket.lookup('ssh_key')
+      if s3_key:
+        ssh_key = s3_key.get_contents_as_string()
+  
+    # if the private key is not created or not available in s3, recreate it
+    if not ssh_key:
+      if keypair:
+        ec2.delete_key_pair(keypair_name)
+  
+      print 'recreating keypair: %s' % (keypair_name)
+      # create new key in current region_name
+      keypair = ec2.create_key_pair(keypair_name)
+      ssh_key = keypair.material
+      # store key in s3
+      k = Key(config_bucket)
+      k.key = 'ssh_key'
+      k.set_contents_from_string(ssh_key)
+      DistributeKeyToRegions(src_region, dst_regions, keypair, aws_id, aws_secret)
+  except boto_exception.S3ResponseError:
+    return False
+    
   assert(keypair)
   assert(ssh_key)
   return ssh_key
