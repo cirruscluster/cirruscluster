@@ -196,11 +196,12 @@ class Manager(object):
     self.region_name = region_name
     self.iam_aws_id = iam_aws_id
     self.iam_aws_secret = iam_aws_secret    
-    self.ec2 = None
     self.ec2 = core.CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, 
                                               region_name)
+    if not self.ec2:
+      raise InvalidAwsCredentials()
     self.s3 = core.CreateTestedS3Connection(iam_aws_id, iam_aws_secret)
-    if not self.ec2 or not self.s3:
+    if not self.s3:
       raise InvalidAwsCredentials()    
     self.workstation_tag = 'cirrus_workstation'
     self.workstation_keypair_name = 'cirrus_workstation'

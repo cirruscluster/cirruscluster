@@ -46,7 +46,7 @@ default_ami_release_name = 'latest'
 ##############################################################################
 
 # Retry decorator with exponential backoff
-def RetryUntilReturnsTrue(tries, delay=3, backoff=2):
+def RetryUntilReturnsTrue(tries, delay=2, backoff=1.5):
   '''Retries a function or method until it returns True.
 
   delay sets the initial delay in seconds, and backoff sets the factor by which
@@ -393,47 +393,47 @@ def CredentialsValid(aws_id, aws_secret):
   return valid
     
 
-@RetryUntilReturnsTrue(3)
+@RetryUntilReturnsTrue(4)
 def CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, region_name):
   """ Retries in case IAM fails because IAM credentials are new and not yet
       propagated to all regions.
   """ 
   region = GetRegion(region_name)
-  ec2_conn = ec2_connection.EC2Connection(iam_aws_id, iam_aws_secret, 
+  conn = ec2_connection.EC2Connection(iam_aws_id, iam_aws_secret, 
                                           region = region)
   # test that ec2 connection works
   try:        
-    ec2_conn.get_all_images(owners=['self'])      
+    conn.get_all_images(owners=['self'])      
   except boto_exception.EC2ResponseError as e:
-    if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
-      print 'ec2 connect failed... will retry...'
-      return False
+    #if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
+    print 'ec2 connect failed... will retry...'
+    return False
   except:
     raise
-  return ec2_conn
+  return conn
 
-@RetryUntilReturnsTrue(3)
+@RetryUntilReturnsTrue(4)
 def CreateTestedS3Connection(iam_aws_id, iam_aws_secret):
-  s3_conn = s3_connection.S3Connection(iam_aws_id, iam_aws_secret)
+  conn = s3_connection.S3Connection(iam_aws_id, iam_aws_secret)
   try:        
-    s3_conn.get_all_buckets()
+    conn.get_all_buckets()
   except boto_exception.S3ResponseError as e:
-    if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
-      print 's3 connect failed... will retry...'
-      return False
+    #if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
+    print 's3 connect failed... will retry...'
+    return False
   except:
     raise
-  return s3_conn
+  return conn
 
-@RetryUntilReturnsTrue(3)
+@RetryUntilReturnsTrue(4)
 def CreateTestedIamConnection(iam_aws_id, iam_aws_secret):
   conn = iam_connection.IAMConnection(iam_aws_id, iam_aws_secret)
   try:        
     conn.get_all_users()
   except boto_exception.BotoServerError as e:
-    if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
-      print 'iam connect failed... will retry...'
-      return False
+    #if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
+    print 'iam connect failed... will retry...'
+    return False
   except:
     raise
   return conn
