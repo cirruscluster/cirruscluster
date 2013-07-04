@@ -60,10 +60,14 @@ class InstanceInfo(object):
 def CirrusIamUserReady(iam_aws_id, iam_aws_secret):
   """ Returns true if provided IAM credentials are ready to use. """
   is_ready = False
-  s3 = core.CreateTestedS3Connection(iam_aws_id, iam_aws_secret)
-  if s3:
-    if core.CirrusAccessIdMetadata(s3, iam_aws_id).IsInitialized():
-      is_ready = True            
+  try:
+    s3 = core.CreateTestedS3Connection(iam_aws_id, iam_aws_secret)
+    if s3:
+      if core.CirrusAccessIdMetadata(s3, iam_aws_id).IsInitialized():
+        is_ready = True            
+  except boto.exception.BotoServerError as e:
+    print e 
+    
   return is_ready
 
 
