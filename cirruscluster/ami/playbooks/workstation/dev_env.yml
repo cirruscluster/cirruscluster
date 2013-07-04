@@ -8,7 +8,9 @@
      - cmake-curses-gui
      - swig
      - nautilus-open-terminal
-     - chromium-browser  
+     - chromium-browser
+     - firefox
+     - libmysqlclient-dev  
      - libssl-dev
      - python-dev
      - libunwind7-dev
@@ -24,6 +26,7 @@
   with_items:
      - requests
      - passlib
+     - virtualenvwrapper
 
 - name: Remove conflicting package versions that got auto-installed  
   apt: pkg=$item state=absent

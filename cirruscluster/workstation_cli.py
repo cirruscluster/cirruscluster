@@ -9,9 +9,13 @@ import platform
 import tempfile
 import logging
 
-# define a Handler which writes INFO messages or higher to the sys.stderr
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
+root = logging.getLogger()
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+root.addHandler(ch)
+
 
 def PrintInstances(manager):
   for instance in manager.ListInstances():
@@ -48,7 +52,6 @@ class Cli(object):
       try:
         self.manager = workstation.Manager(self.region, self.aws_id,
                                            self.aws_secret)
-        break
       except workstation.InvalidAwsCredentials:
         # try to get root AWS account from AWS default environment variables
         root_aws_id = os.environ.get('AWS_ACCESS_KEY_ID')
@@ -59,7 +62,8 @@ class Cli(object):
                 ' AWS key id and secret.'
           root_aws_id = raw_input('ROOT aws key id: ')
           root_aws_secret = raw_input('ROOT aws key secret: ')
-        iam_user = workstation.InitCirrusIAMUser(root_aws_id, root_aws_secret)
+          
+        iam_user = workstation.GetCirrusIamUserCredentials(root_aws_id, root_aws_secret)
         self.aws_id, self.aws_secret = iam_user
       except:
         raise

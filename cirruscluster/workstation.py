@@ -34,7 +34,15 @@ import hashlib
 import logging
 import time
 
-workstation_profile = 'cirrus_workstation_profile'
+cirrus_iam_username = 'cirrus'
+
+class UnsupportedAwsRegion(Exception):
+  pass
+
+
+class InvalidAwsCredentials(Exception):
+  pass
+
 
 class InstanceInfo(object):
   def __init__(self, name, id, state, hostname):
@@ -44,47 +52,123 @@ class InstanceInfo(object):
     self.hostname = hostname
     return
 
-def IAMUserReady(iam_aws_id, iam_aws_secret):
-  """ Returns true if IAM user can login. """
-  ready = False
-  if iam_aws_id and iam_aws_secret:
+  
+class CirrusAccessIdMetadata(object):
+  def __init__(self, s3, access_id):
+    self.s3 = s3    
+    self.access_id = access_id
+    # bucket name unique by design
+    bucket_name = 'cirrus_user_%s' % (access_id.lower()) 
+    self.bucket = s3.lookup(bucket_name)
+    if not self.bucket:
+      self.bucket = s3.create_bucket(bucket_name, policy='private')
+    assert(self.bucket)
+    return
+    
+  def SetInitialized(self):
+    key = self.bucket.lookup('is_initialized')
+    key.set_contents_from_string('true')
+    return
+    
+  def IsInitialized(self):
+    is_initialized = False
+    key = self.bucket.lookup('is_initialized')
+    if key and key.get_contents_as_string() == 'true':
+      is_initialized = True
+    return is_initialized  
+  
+  def GetSecret(self):
+    key = self.bucket.lookup('secret')
+    secret = key.get_contents_as_string()
+    assert(secret)
+    return secret
+  
+  def SetSecret(self, secret):
+    key = self.bucket.lookup('secret')
+    key.set_contents_from_string(secret)
+    return
+
+
+def CirrusIamUserReady(iam_aws_id, iam_aws_secret):
+  """ Returns true if provided IAM credentials are ready to use. """
+  is_ready = False
+  s3 = core.CreateTestedS3Connection(iam_aws_id, iam_aws_secret)
+  if s3:
+    if CirrusAccessIdMetadata(s3, iam_aws_id).IsInitialized():
+      is_ready = True            
+  return is_ready
+
+
+def GetCirrusIamUserCredentials(root_aws_id, root_aws_secret):
+  return CirrusIamUserManager(root_aws_id, root_aws_secret).GetCredentials()
+  
+  
+class CirrusIamUserManager(object):
+  def __init__(self, root_aws_id, root_aws_secret):
+    self.root_aws_id = root_aws_id
+    self.root_aws_secret = root_aws_secret
+    print root_aws_id
+    print root_aws_secret
+    self.iam = core.CreateTestedIamConnection(root_aws_id, root_aws_secret)
+    if not self.iam:
+      raise InvalidAwsCredentials()
+    self.s3 = core.CreateTestedS3Connection(root_aws_id, root_aws_secret)
+    if not self.s3:
+      raise InvalidAwsCredentials()    
+    self.workstation_profile = 'cirrus_workstation_profile'
+    self.role_name = 'cirrus_workstation'    
+    return
+    
+  def GetCredentials(self):
+    if not self.__IsInitialized():
+      self.__Create()      
+    assert(self.__IsInitialized()) 
+    iam_id = self.GetAccessKeyIdForUsername(cirrus_iam_username)
+    iam_secret = CirrusAccessIdMetadata(self.s3, iam_id).GetSecret()
+    return iam_id, iam_secret
+    
+  def __IsInitialized(self):      
+    """ Returns true if IAM user initialization has completed. """  
+    is_initialized = False
+    iam_id = self.GetAccessKeyId()
+    if iam_id:
+      if CirrusAccessIdMetadata(self.s3, iam_id).IsInitialized():
+        is_initialized = True
+    return is_initialized
+  
+  def __Cleanup(self):
+    logging.info('Cleaning up iam user...')
+    response = self.iam.delete_user(cirrus_iam_username)
+    
     try:
-      # test that ec2 connection works
-      test_ec2 = ec2_connection.EC2Connection(iam_aws_id, iam_aws_secret)
-      test_ec2.get_all_instances()
-      ready = True
+      self.iam.remove_role_from_instance_profile(self.workstation_profile, self.role_name)
     except:
-      logging.info( 'failed to connect as user: %s' % (iam_aws_id))
-      
-  return ready
-
-
-def InitCirrusIAMUser(root_aws_id, root_aws_secret):
-  """ Configure cirrus IAM user.
-  Given a user's root aws credentials, setup the IAM user environment that
-  can be used later for all future api actions.
-  """
-  #iam = iam_connection.IAMConnection(root_aws_id, root_aws_secret)
-  #s3 = s3_connection.S3Connection(root_aws_id, root_aws_secret)
+      raise
+    
+    try:
+      self.iam.delete_instance_profile(self.workstation_profile)
+    except:
+      raise
+    
+    response = self.iam.list_role_policies(self.role_name)
+    role_policy_names = response['list_role_policies_response'] \
+                                ['list_role_policies_result']['policy_names']
+    for role_policy_name in role_policy_names:
+      self.iam.delete_role_policy(self.role_name, role_policy_name)
+    try:
+      self.iam.delete_role(self.role_name)
+    except:
+      raise
+    
+    return       
   
-  iam = core.CreateTestedIamConnection(root_aws_id, root_aws_secret)
-  s3 = core.CreateTestedS3Connection(root_aws_id, root_aws_secret)
-  
-  
-  cirrus_iam_username = 'cirrus'
-  bucketname = 'cirrus_iam_config_%s' % (hashlib.md5(root_aws_id).hexdigest())
-  has_cirrus_user = False
-  response = iam.get_all_users()
-  for user in response['list_users_response']['list_users_result']['users']:
-    logging.info( 'iam user exists: %s' % user)
-    has_cirrus_user = True
-  if not has_cirrus_user:
-    logging.info( 'creating iam user')
-    response = iam.create_user(cirrus_iam_username)
+  def __Create(self):
+    self.__Cleanup()    
+    print 'Creating iam user...'
+    exit(0)
+    response = self.iam.create_user(cirrus_iam_username)
     # setup role so workstation can assume IAM credentials without additional
     # configuration
-    logging.info( 'Created iam role and policy')
-    role_name = 'cirrus_workstation'
     
     power_user_policy_json = """{
         "Version": "2012-10-17",
@@ -96,95 +180,53 @@ def InitCirrusIAMUser(root_aws_id, root_aws_secret):
             }
         ]
     }"""
+    self.iam.put_user_policy(cirrus_iam_username, 'power_user_policy', policy_json)
     # ensure no conflicting role exists with same name
-    try:
-      iam.remove_role_from_instance_profile(workstation_profile, role_name)
-    except:
-      pass
-    try:
-      iam.delete_instance_profile(workstation_profile)
-    except:
-      pass
-    response = iam.list_role_policies(role_name)
-    role_policy_names = response['list_role_policies_response'] \
-                                ['list_role_policies_result']['policy_names']
-    for role_policy_name in role_policy_names:
-      iam.delete_role_policy(role_name, role_policy_name)
-    try:
-      iam.delete_role(role_name)
-    except:
-      raise
-    iam.create_instance_profile(workstation_profile)
+      
+    self.iam.create_instance_profile(self.workstation_profile)
     workstation_role_arn = None
-    try:
-      response = iam.create_role(role_name)
-      workstation_role_arn = response['create_role_response'] \
+    
+    response = self.iam.create_role(self.role_name)
+    workstation_role_arn = response['create_role_response'] \
                                      ['create_role_result']['role']['arn']
-    except:
-      pass
     assert(workstation_role_arn)
-    iam.add_role_to_instance_profile(workstation_profile, role_name)
-    iam.put_role_policy(role_name, 'power_user_policy', power_user_policy_json)
+    self.iam.add_role_to_instance_profile(self.workstation_profile, self.role_name)
+    self.iam.put_role_policy(self.role_name, 'power_user_policy', power_user_policy_json)
     # update iam user to have right to launch instances with the 
     # cirrus_workstatio_role
-    policy_json = '{"Version": "2012-10-17", ' \
+    assume_role_policy_json = '{"Version": "2012-10-17", ' \
                   '"Statement": [{"Effect": "Allow", "Action":"iam:PassRole",' \
                   ' "Resource": "%s"}]}' % (workstation_role_arn)
-    iam.put_user_policy(cirrus_iam_username, 
-                        'assume_cirrus_workstation_role', policy_json)
-  policy_json = '{"Version": "2012-10-17", "Statement": [{"Effect": "Allow",' \
-                ' "NotAction": "iam:*", "Resource": "*"}]}'
-  iam.put_user_policy(cirrus_iam_username, 'power_user_policy', policy_json)
-  response = iam.get_all_access_keys(cirrus_iam_username)
-  iam_id = None
-  iam_secret = None  
-  for key in response['list_access_keys_response']['list_access_keys_result'] \
-                     ['access_key_metadata']:
-    if key['status'] == 'Active' and key['user_name'] == cirrus_iam_username:
-      iam_id = key['access_key_id']
-      break
-  cred_bucket = s3.lookup(bucketname)
-  if not cred_bucket:
-    cred_bucket = s3.create_bucket(bucketname, policy='private')
-  if iam_id:
-    # fetch secret from s3
-    cirrus_cred_bucket_key = 'cirrus_iam_sec_%s' % \
-     (hashlib.md5(iam_id).hexdigest())
-    key = cred_bucket.lookup(cirrus_cred_bucket_key)
-    if key:
-      iam_secret = key.get_contents_as_string()
-
-  # part of the credentials is unknown, so make new ones and store those
-  if not iam_id or not iam_secret:
+    self.iam.put_user_policy(cirrus_iam_username, 
+                        'assume_cirrus_workstation_role', assume_role_policy_json)
+    
+  
     logging.info('Creating new aws credentials for IAM user %s.'\
                   % cirrus_iam_username)
-    # Delete any existing acces keys (to prevent from exceeding limit of 2)
-    res = iam.get_all_access_keys(cirrus_iam_username)
-    for key_metadata in res['list_access_keys_response']['list_access_keys_result']['access_key_metadata']:
-      iam.delete_access_key(key_metadata.access_key_id, user_name = cirrus_iam_username)
       
-    response = iam.create_access_key(cirrus_iam_username)
+    response = self.iam.create_access_key(cirrus_iam_username)
     new_key = response['create_access_key_response']\
                       ['create_access_key_result']\
                       ['access_key']
     iam_id = new_key['access_key_id']
     assert(iam_id)
     iam_secret = new_key['secret_access_key']
-    iam_hash = hashlib.md5(iam_id).hexdigest()
-    cirrus_cred_bucket_key = 'cirrus_iam_sec_%s' % (iam_hash)
-    #store secret in s3 for future use
-    k = s3_connection.Key(cred_bucket)
-    k.key = cirrus_cred_bucket_key
-    k.set_contents_from_string(iam_secret)
-  return iam_id, iam_secret
-
-
-
-class UnsupportedAwsRegion(Exception):
-  pass
-
-class InvalidAwsCredentials(Exception):
-  pass
+    CirrusAccessIdMetadata(self.s3, iam_id).SetSecret(iam_secret)  
+    
+    
+    #TODO: wait in a loop until the new credentials are accepted in all regions and for iam and boto services
+    
+    return
+    
+  def GetAccessKeyId(self):
+    access_key_id = None
+    response = self.iam.get_all_access_keys(cirrus_iam_username)  
+    for key in response['list_access_keys_response']['list_access_keys_result'] \
+                       ['access_key_metadata']:
+      if key['status'] == 'Active' and key['user_name'] == cirrus_iam_username:
+        access_key_id = key['access_key_id']
+        break
+    return access_key_id
 
 
 class Manager(object):
@@ -194,6 +236,10 @@ class Manager(object):
     if region_name not in core.tested_region_names:
       raise UnsupportedAwsRegion()
     self.region_name = region_name
+    
+    if not CirrusIamUserReady(iam_aws_id, iam_aws_secret):
+      raise InvalidAwsCredentials()
+    
     self.iam_aws_id = iam_aws_id
     self.iam_aws_secret = iam_aws_secret    
     self.ec2 = core.CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, 
@@ -314,7 +360,7 @@ class Manager(object):
     self.__CreateWorkstationSecurityGroup() # ensure the security group exists
     # find the IAM Policy Profile
     logging.info( 'Attempting to launch instance with ami: %s' % (ami.id))
-    logging.info( 'workstation_profile: %s' % (workstation_profile))
+    logging.info( 'workstation_profile: %s' % (self.workstation_profile))
     reservation = self.ec2.run_instances(ami.id,
        key_name = self.workstation_keypair_name,
        security_groups = [core.workstation_security_group],
@@ -322,7 +368,7 @@ class Manager(object):
        #placement = prefered_availability_zone,
        disable_api_termination = True,
        instance_initiated_shutdown_behavior = 'stop',
-       instance_profile_name = workstation_profile # IAM instance profile 
+       instance_profile_name = self.workstation_profile # IAM instance profile 
        )
     assert(len(reservation.instances) == 1)
     instance = reservation.instances[0]

@@ -393,11 +393,13 @@ def CredentialsValid(aws_id, aws_secret):
   return valid
     
 
-@RetryUntilReturnsTrue(4)
+@RetryUntilReturnsTrue(1)
 def CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, region_name):
   """ Retries in case IAM fails because IAM credentials are new and not yet
       propagated to all regions.
   """ 
+  if not iam_aws_id or not iam_aws_secret:
+    return False
   region = GetRegion(region_name)
   conn = ec2_connection.EC2Connection(iam_aws_id, iam_aws_secret, 
                                           region = region)
@@ -412,8 +414,10 @@ def CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, region_name):
     raise
   return conn
 
-@RetryUntilReturnsTrue(4)
+@RetryUntilReturnsTrue(1)
 def CreateTestedS3Connection(iam_aws_id, iam_aws_secret):
+  if not iam_aws_id or not iam_aws_secret:
+    return False 
   conn = s3_connection.S3Connection(iam_aws_id, iam_aws_secret)
   try:        
     conn.get_all_buckets()
@@ -425,8 +429,10 @@ def CreateTestedS3Connection(iam_aws_id, iam_aws_secret):
     raise
   return conn
 
-@RetryUntilReturnsTrue(4)
+@RetryUntilReturnsTrue(5)
 def CreateTestedIamConnection(iam_aws_id, iam_aws_secret):
+  if not iam_aws_id or not iam_aws_secret:
+    return False
   conn = iam_connection.IAMConnection(iam_aws_id, iam_aws_secret)
   try:        
     conn.get_all_users()
