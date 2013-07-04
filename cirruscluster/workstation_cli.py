@@ -53,6 +53,7 @@ class Cli(object):
         self.manager = workstation.Manager(self.region, self.aws_id,
                                            self.aws_secret)
       except workstation.InvalidAwsCredentials:
+        #raise
         # try to get root AWS account from AWS default environment variables
         root_aws_id = os.environ.get('AWS_ACCESS_KEY_ID')
         root_aws_secret = os.environ.get('AWS_SECRET_ACCESS_KEY')
@@ -62,7 +63,10 @@ class Cli(object):
                 ' AWS key id and secret.'
           root_aws_id = raw_input('ROOT aws key id: ')
           root_aws_secret = raw_input('ROOT aws key secret: ')
-          
+        
+        assert(len(root_aws_id) == 20)
+        assert(len(root_aws_secret) == 40)
+        
         iam_user = workstation.GetCirrusIamUserCredentials(root_aws_id, root_aws_secret)
         self.aws_id, self.aws_secret = iam_user
       except:

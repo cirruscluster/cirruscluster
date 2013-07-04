@@ -6,6 +6,7 @@ from boto.s3.key import Key
 from boto.ec2 import connection as ec2_connection
 from boto.iam import connection as iam_connection 
 from boto.s3 import connection as s3_connection
+from boto.s3 import key as s3_key
 from cirruscluster.ext import ansible
 from cirruscluster.ext.ansible import callbacks
 from cirruscluster.ext.ansible import inventory as ansible_inventory
@@ -381,6 +382,57 @@ def GetRegion(region_name):
   return  region
 
 
+class CirrusAccessIdMetadata(object):
+  """ Stores metadata about the initalization of an access id in S3. """
+  def __init__(self, s3, access_id):
+    self.s3 = s3    
+    self.access_id = access_id
+    # bucket name unique by design
+    bucket_name = 'cirrus_user_%s' % (access_id.lower()) 
+    self.bucket = s3.lookup(bucket_name)
+    if not self.bucket:
+      self.bucket = s3.create_bucket(bucket_name, policy='private')
+    assert(self.bucket)
+    return
+    
+  def SetInitialized(self):
+    kv = s3_key.Key(self.bucket)
+    kv.key = 'is_initialized'
+    kv.set_contents_from_string('true')
+    return
+    
+  def IsInitialized(self):
+    is_initialized = False
+    key = self.bucket.get_key('is_initialized')
+    if key and key.get_contents_as_string() == 'true':
+      is_initialized = True
+    return is_initialized  
+  
+  def GetSecret(self):
+    key = self.bucket.get_key('secret')
+    secret = key.get_contents_as_string()
+    assert(secret)
+    return secret
+  
+  def SetSecret(self, secret):
+    kv = s3_key.Key(self.bucket)
+    kv.key = 'secret'
+    kv.set_contents_from_string(secret)
+    return
+  
+  def GetSshKey(self, keypair_name):
+    ssh_key = None
+    entry = self.bucket.get_key('keypair_%s' % keypair_name)
+    if entry:
+      ssh_key = entry.get_contents_as_string()
+    return ssh_key
+  
+  def SetSshKey(self, keypair_name, ssh_key):
+    entry = s3_key.Key(self.bucket)
+    entry.key = 'keypair_%s' % keypair_name
+    entry.set_contents_from_string(ssh_key)
+    return
+
 
 def CredentialsValid(aws_id, aws_secret):
   valid = False
@@ -392,59 +444,53 @@ def CredentialsValid(aws_id, aws_secret):
     pass
   return valid
     
-
-@RetryUntilReturnsTrue(1)
 def CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, region_name):
   """ Retries in case IAM fails because IAM credentials are new and not yet
       propagated to all regions.
   """ 
-  if not iam_aws_id or not iam_aws_secret:
-    return False
   region = GetRegion(region_name)
   conn = ec2_connection.EC2Connection(iam_aws_id, iam_aws_secret, 
                                           region = region)
-  # test that ec2 connection works
   try:        
     conn.get_all_images(owners=['self'])      
   except boto_exception.EC2ResponseError as e:
-    #if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
-    print 'ec2 connect failed... will retry...'
     return False
   except:
     raise
   return conn
 
-@RetryUntilReturnsTrue(1)
 def CreateTestedS3Connection(iam_aws_id, iam_aws_secret):
-  if not iam_aws_id or not iam_aws_secret:
-    return False 
   conn = s3_connection.S3Connection(iam_aws_id, iam_aws_secret)
   try:        
     conn.get_all_buckets()
-  except boto_exception.S3ResponseError as e:
-    #if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
-    print 's3 connect failed... will retry...'
+  except boto_exception.S3ResponseError as e:    
     return False
   except:
     raise
   return conn
 
-@RetryUntilReturnsTrue(5)
 def CreateTestedIamConnection(iam_aws_id, iam_aws_secret):
-  if not iam_aws_id or not iam_aws_secret:
-    return False
   conn = iam_connection.IAMConnection(iam_aws_id, iam_aws_secret)
   try:        
     conn.get_all_users()
   except boto_exception.BotoServerError as e:
-    #if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
-    print 'iam connect failed... will retry...'
     return False
   except:
     raise
   return conn
 
 
+@RetryUntilReturnsTrue(10)
+def WaitForEc2Connection(iam_aws_id, iam_aws_secret, region_name):
+  return CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, region_name)
+
+@RetryUntilReturnsTrue(10)
+def WaitForS3Connection(iam_aws_id, iam_aws_secret):
+  return CreateTestedS3Connection(iam_aws_id, iam_aws_secret)
+
+@RetryUntilReturnsTrue(10)
+def WaitForIamConnection(iam_aws_id, iam_aws_secret):
+  return CreateTestedIamConnection(iam_aws_id, iam_aws_secret)
 
 def PrivateToPublicOpenSSH(key, host):
   """ Computes the OpenSSH public key format given a private key. """
@@ -468,42 +514,31 @@ def PrivateToPublicOpenSSH(key, host):
   return public_key
 
 @RetryUntilReturnsTrue(4)
-def InitKeypair(aws_id, aws_secret, ec2, s3, config_bucket_name, keypair_name, src_region, 
+def InitKeypair(aws_id, aws_secret, ec2, s3, keypair_name, src_region, 
                 dst_regions):
   """ 
   Returns the ssh private key for the given keypair name Cirrus created bucket.
   Creates the keypair if it doesn't yet exist and stores private key in S3. 
   """
+  # check if a keypair has been created
+  metadata = CirrusAccessIdMetadata(s3, aws_id)
+  keypair = ec2.get_key_pair(keypair_name)
   ssh_key = None
-  try:
-    # check if a keypair has been created
-    config_bucket = s3.lookup(config_bucket_name)
-    if not config_bucket:
-      config_bucket = s3.create_bucket(config_bucket_name, policy='private')  
-    keypair = ec2.get_key_pair(keypair_name)
+  if keypair:
+    # if created, check that private key is available in s3
+    ssh_key = metadata.GetSshKey(keypair_name)
+  
+  # if the private key is not created or not available in s3, recreate it
+  if not ssh_key:
     if keypair:
-      # if created, check that private key is available in s3
-      s3_key = config_bucket.lookup('ssh_key')
-      if s3_key:
-        ssh_key = s3_key.get_contents_as_string()
-  
-    # if the private key is not created or not available in s3, recreate it
-    if not ssh_key:
-      if keypair:
-        ec2.delete_key_pair(keypair_name)
-  
-      print 'recreating keypair: %s' % (keypair_name)
-      # create new key in current region_name
-      keypair = ec2.create_key_pair(keypair_name)
-      ssh_key = keypair.material
-      # store key in s3
-      k = Key(config_bucket)
-      k.key = 'ssh_key'
-      k.set_contents_from_string(ssh_key)
-      DistributeKeyToRegions(src_region, dst_regions, keypair, aws_id, aws_secret)
-  except boto_exception.S3ResponseError:
-    return False
-    
+      ec2.delete_key_pair(keypair_name)
+
+    print 'Recreating keypair: %s' % (keypair_name)
+    # create new key in current region_name
+    keypair = ec2.create_key_pair(keypair_name)
+    ssh_key = keypair.material
+    metadata.SetSshKey(keypair_name, ssh_key)
+    DistributeKeyToRegions(src_region, dst_regions, keypair, aws_id, aws_secret)
   assert(keypair)
   assert(ssh_key)
   return ssh_key

@@ -27,14 +27,15 @@ from cirruscluster.ext.nx import password
 from boto.ec2 import connection as ec2_connection 
 from boto.iam import connection as iam_connection
 from boto.s3 import connection as s3_connection
+from boto.s3 import key as s3_key
 from cirruscluster import core
 import pkg_resources 
 import string
-import hashlib
 import logging
 import time
 
 cirrus_iam_username = 'cirrus'
+workstation_profile = 'cirrus_workstation_profile'
 
 class UnsupportedAwsRegion(Exception):
   pass
@@ -53,40 +54,7 @@ class InstanceInfo(object):
     return
 
   
-class CirrusAccessIdMetadata(object):
-  def __init__(self, s3, access_id):
-    self.s3 = s3    
-    self.access_id = access_id
-    # bucket name unique by design
-    bucket_name = 'cirrus_user_%s' % (access_id.lower()) 
-    self.bucket = s3.lookup(bucket_name)
-    if not self.bucket:
-      self.bucket = s3.create_bucket(bucket_name, policy='private')
-    assert(self.bucket)
-    return
-    
-  def SetInitialized(self):
-    key = self.bucket.lookup('is_initialized')
-    key.set_contents_from_string('true')
-    return
-    
-  def IsInitialized(self):
-    is_initialized = False
-    key = self.bucket.lookup('is_initialized')
-    if key and key.get_contents_as_string() == 'true':
-      is_initialized = True
-    return is_initialized  
-  
-  def GetSecret(self):
-    key = self.bucket.lookup('secret')
-    secret = key.get_contents_as_string()
-    assert(secret)
-    return secret
-  
-  def SetSecret(self, secret):
-    key = self.bucket.lookup('secret')
-    key.set_contents_from_string(secret)
-    return
+
 
 
 def CirrusIamUserReady(iam_aws_id, iam_aws_secret):
@@ -94,7 +62,7 @@ def CirrusIamUserReady(iam_aws_id, iam_aws_secret):
   is_ready = False
   s3 = core.CreateTestedS3Connection(iam_aws_id, iam_aws_secret)
   if s3:
-    if CirrusAccessIdMetadata(s3, iam_aws_id).IsInitialized():
+    if core.CirrusAccessIdMetadata(s3, iam_aws_id).IsInitialized():
       is_ready = True            
   return is_ready
 
@@ -102,29 +70,43 @@ def CirrusIamUserReady(iam_aws_id, iam_aws_secret):
 def GetCirrusIamUserCredentials(root_aws_id, root_aws_secret):
   return CirrusIamUserManager(root_aws_id, root_aws_secret).GetCredentials()
   
+
+def NoSuchEntityOk(f):
+  """ Decorator to remove NoSuchEntity exceptions, and raises all others. """
+  def ExceptionFilter(*args):
+    try:
+      return f(*args)
+    except boto.exception.BotoServerError as e:
+      if e.error_code == 'NoSuchEntity':
+        pass
+      else:
+        raise
+    except:  
+      raise
+    return False
+  return ExceptionFilter
+  
   
 class CirrusIamUserManager(object):
+  """ Creates the IAM user and the required policies. """
   def __init__(self, root_aws_id, root_aws_secret):
     self.root_aws_id = root_aws_id
     self.root_aws_secret = root_aws_secret
-    print root_aws_id
-    print root_aws_secret
     self.iam = core.CreateTestedIamConnection(root_aws_id, root_aws_secret)
     if not self.iam:
       raise InvalidAwsCredentials()
     self.s3 = core.CreateTestedS3Connection(root_aws_id, root_aws_secret)
     if not self.s3:
       raise InvalidAwsCredentials()    
-    self.workstation_profile = 'cirrus_workstation_profile'
+    
     self.role_name = 'cirrus_workstation'    
     return
     
   def GetCredentials(self):
     if not self.__IsInitialized():
       self.__Create()      
-    assert(self.__IsInitialized()) 
-    iam_id = self.GetAccessKeyIdForUsername(cirrus_iam_username)
-    iam_secret = CirrusAccessIdMetadata(self.s3, iam_id).GetSecret()
+    iam_id = self.GetAccessKeyId()
+    iam_secret = core.CirrusAccessIdMetadata(self.s3, iam_id).GetSecret()
     return iam_id, iam_secret
     
   def __IsInitialized(self):      
@@ -132,44 +114,44 @@ class CirrusIamUserManager(object):
     is_initialized = False
     iam_id = self.GetAccessKeyId()
     if iam_id:
-      if CirrusAccessIdMetadata(self.s3, iam_id).IsInitialized():
+      if core.CirrusAccessIdMetadata(self.s3, iam_id).IsInitialized():
         is_initialized = True
     return is_initialized
   
   def __Cleanup(self):
     logging.info('Cleaning up iam user...')
-    response = self.iam.delete_user(cirrus_iam_username)
-    
-    try:
-      self.iam.remove_role_from_instance_profile(self.workstation_profile, self.role_name)
-    except:
-      raise
-    
-    try:
-      self.iam.delete_instance_profile(self.workstation_profile)
-    except:
-      raise
-    
-    response = self.iam.list_role_policies(self.role_name)
-    role_policy_names = response['list_role_policies_response'] \
-                                ['list_role_policies_result']['policy_names']
-    for role_policy_name in role_policy_names:
-      self.iam.delete_role_policy(self.role_name, role_policy_name)
-    try:
-      self.iam.delete_role(self.role_name)
-    except:
-      raise
-    
-    return       
+    NoSuchEntityOk(self.iam.remove_role_from_instance_profile)(workstation_profile, self.role_name)
+    NoSuchEntityOk(self.iam.delete_instance_profile)(workstation_profile)
+    role_policy_names = []
+    response = NoSuchEntityOk(self.iam.list_role_policies)(self.role_name)
+    if response:
+      role_policy_names = response['list_role_policies_response'] \
+                                  ['list_role_policies_result']['policy_names']                                        
+      for role_policy_name in role_policy_names:
+        self.iam.delete_role_policy(self.role_name, role_policy_name)
+    NoSuchEntityOk(self.iam.delete_role)(self.role_name)
+    user_policy_names = []    
+    response = NoSuchEntityOk(self.iam.get_all_user_policies)(cirrus_iam_username)
+    if response:
+      user_policy_names = response['list_user_policies_response'] \
+                                  ['list_user_policies_result']['policy_names']
+      for user_policy_name in user_policy_names:
+        self.iam.delete_user_policy(cirrus_iam_username, user_policy_name)
+    response = NoSuchEntityOk(self.iam.get_all_access_keys)(cirrus_iam_username)
+    if response:
+      access_keys = response['list_access_keys_response'] \
+                            ['list_access_keys_result']['access_key_metadata']
+      for access_key in access_keys:
+        self.iam.delete_access_key(access_key['access_key_id'], 
+                                   access_key['user_name'])                             
+    NoSuchEntityOk(self.iam.delete_user)(cirrus_iam_username)
+    return
   
   def __Create(self):
     self.__Cleanup()    
-    print 'Creating iam user...'
-    exit(0)
     response = self.iam.create_user(cirrus_iam_username)
     # setup role so workstation can assume IAM credentials without additional
-    # configuration
-    
+    # configuration    
     power_user_policy_json = """{
         "Version": "2012-10-17",
         "Statement": [
@@ -180,17 +162,15 @@ class CirrusIamUserManager(object):
             }
         ]
     }"""
-    self.iam.put_user_policy(cirrus_iam_username, 'power_user_policy', policy_json)
+    self.iam.put_user_policy(cirrus_iam_username, 'power_user_policy', power_user_policy_json)
     # ensure no conflicting role exists with same name
-      
-    self.iam.create_instance_profile(self.workstation_profile)
+    self.iam.create_instance_profile(workstation_profile)
     workstation_role_arn = None
-    
     response = self.iam.create_role(self.role_name)
     workstation_role_arn = response['create_role_response'] \
-                                     ['create_role_result']['role']['arn']
+                                   ['create_role_result']['role']['arn']
     assert(workstation_role_arn)
-    self.iam.add_role_to_instance_profile(self.workstation_profile, self.role_name)
+    self.iam.add_role_to_instance_profile(workstation_profile, self.role_name)
     self.iam.put_role_policy(self.role_name, 'power_user_policy', power_user_policy_json)
     # update iam user to have right to launch instances with the 
     # cirrus_workstatio_role
@@ -199,11 +179,8 @@ class CirrusIamUserManager(object):
                   ' "Resource": "%s"}]}' % (workstation_role_arn)
     self.iam.put_user_policy(cirrus_iam_username, 
                         'assume_cirrus_workstation_role', assume_role_policy_json)
-    
-  
     logging.info('Creating new aws credentials for IAM user %s.'\
                   % cirrus_iam_username)
-      
     response = self.iam.create_access_key(cirrus_iam_username)
     new_key = response['create_access_key_response']\
                       ['create_access_key_result']\
@@ -211,21 +188,36 @@ class CirrusIamUserManager(object):
     iam_id = new_key['access_key_id']
     assert(iam_id)
     iam_secret = new_key['secret_access_key']
-    CirrusAccessIdMetadata(self.s3, iam_id).SetSecret(iam_secret)  
+    metadata = core.CirrusAccessIdMetadata(self.s3, iam_id)
+    metadata.SetSecret(iam_secret)  
+    metadata.SetInitialized()
     
     
-    #TODO: wait in a loop until the new credentials are accepted in all regions and for iam and boto services
+    self.__WaitForCredentialsLive(iam_id, iam_secret)
+    return
+  
+  def __WaitForCredentialsLive(self, iam_aws_id, iam_aws_secret):
+    """ Wait until the new credentials are accepted in all regions and for ec2 and boto services.
+       If we don't do this, we may have a race condition where calls fail (and we can't tell if the credentials are bad (stop) or not yet valid (keep trying))
+    """
+    print 'waiting for credentials to go live...'
+    for region in core.tested_region_names:
+      core.WaitForEc2Connection(iam_aws_id, iam_aws_secret, region)
+    core.WaitForS3Connection(iam_aws_id, iam_aws_secret)
     
+    print 'done'
     return
     
   def GetAccessKeyId(self):
     access_key_id = None
-    response = self.iam.get_all_access_keys(cirrus_iam_username)  
-    for key in response['list_access_keys_response']['list_access_keys_result'] \
-                       ['access_key_metadata']:
-      if key['status'] == 'Active' and key['user_name'] == cirrus_iam_username:
-        access_key_id = key['access_key_id']
-        break
+    response = NoSuchEntityOk(self.iam.get_all_access_keys)(cirrus_iam_username)
+    if response:
+      for key in response['list_access_keys_response'] \
+                         ['list_access_keys_result'] \
+                         ['access_key_metadata']:
+        if key['status'] == 'Active':
+          access_key_id = key['access_key_id']
+          break
     return access_key_id
 
 
@@ -236,10 +228,8 @@ class Manager(object):
     if region_name not in core.tested_region_names:
       raise UnsupportedAwsRegion()
     self.region_name = region_name
-    
     if not CirrusIamUserReady(iam_aws_id, iam_aws_secret):
       raise InvalidAwsCredentials()
-    
     self.iam_aws_id = iam_aws_id
     self.iam_aws_secret = iam_aws_secret    
     self.ec2 = core.CreateTestedEc2Connection(iam_aws_id, iam_aws_secret, 
@@ -252,63 +242,24 @@ class Manager(object):
     self.workstation_tag = 'cirrus_workstation'
     self.workstation_keypair_name = 'cirrus_workstation'
     self.ssh_key = None
-    tmp_hash = hashlib.md5(iam_aws_id).hexdigest()    
-    config_bucketname = 'cirrus_workstation_config_%s' % tmp_hash      
     src_region = self.region_name
     dst_regions = core.tested_region_names
     self.ssh_key = core.InitKeypair(self.iam_aws_id, self.iam_aws_secret, 
-                                    self.ec2, self.s3, config_bucketname, 
+                                    self.ec2, self.s3,  
                                     self.workstation_keypair_name, src_region,
                                     dst_regions)
     return
 
 
-#  @core.RetryUntilReturnsTrue(tries=5)
-#  def __CreateValidatedConnections(self):
-#    """ Retries in case IAM fails because IAM credentials are new and not yet
-#        propagated to all regions.
-#    """ 
-#    region = core.GetRegion(self.region_name)
-#    # test that ec2 connection works
-#    test_ec2 = ec2_connection.EC2Connection(self.iam_aws_id, 
-#                                            self.iam_aws_secret,
-#                                            region = region)
-#    try:        
-#      test_ec2.get_all_images(owners=['self'])      
-#    except boto.exception.EC2ResponseError as e:
-#      if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
-#        print 'ec2 connect failed... will retry...'
-#        return False
-#    except:
-#      raise
-#    
-#    test_s3 = s3_connection.S3Connection(self.iam_aws_id, 
-#                                         self.iam_aws_secret)
-#    try:        
-#      test_s3.get_all_buckets()      
-#    except boto.exception.S3ResponseError as e:
-#      if e.error_code == 'AuthFailure' or e.error_code == 'InvalidAccessKeyId':
-#        print 's3 connect failed... will retry...'
-#        return False
-#    except:
-#      raise    
-#    self.ec2 = test_ec2
-#    self.s3 = test_s3
-#    return True
-
   def Debug(self):
     res = self.ec2.get_all_instances(instance_ids=['i-b65fbbda'])
     instance = res[0].instances[0]
-    
     params = {'InstanceId' : instance.id,
               'BlockDeviceMapping.1.DeviceName' : '/dev/sda1',
               'BlockDeviceMapping.1.Ebs.VolumeId' : 'vol-c3516299',
               'BlockDeviceMapping.1.Ebs.DeleteOnTermination' : 'true'}
     instance.connection.get_status('ModifyInstanceAttribute', params, verb='POST')
     instance.update()
-    
-    
-    
     return
   
   def ListInstances(self):
@@ -329,23 +280,23 @@ class Manager(object):
     return info
 
   def TerminateInstance(self, instance_id):
-      instance = self.__GetInstanceById(instance_id)
-      assert(instance)
-      instance.modify_attribute('disableApiTermination', False)
-      self.ec2.terminate_instances([instance_id])
-      return
+    instance = self.__GetInstanceById(instance_id)
+    assert(instance)
+    instance.modify_attribute('disableApiTermination', False)
+    self.ec2.terminate_instances([instance_id])
+    return
 
   def StopInstance(self, instance_id):
-      instance = self.__GetInstanceById(instance_id)
-      assert(instance)
-      self.ec2.stop_instances([instance_id])
-      return
+    instance = self.__GetInstanceById(instance_id)
+    assert(instance)
+    self.ec2.stop_instances([instance_id])
+    return
     
   def StartInstance(self, instance_id):
-      instance = self.__GetInstanceById(instance_id)
-      if instance.state != 'running':
-        instance.start()
-      return    
+    instance = self.__GetInstanceById(instance_id)
+    if instance.state != 'running':
+      instance.start()
+    return    
 
   def CreateInstance(self, workstation_name, instance_type, ubuntu_release_name,
                      mapr_version, ami_release_name, ami_owner_id):
@@ -360,7 +311,7 @@ class Manager(object):
     self.__CreateWorkstationSecurityGroup() # ensure the security group exists
     # find the IAM Policy Profile
     logging.info( 'Attempting to launch instance with ami: %s' % (ami.id))
-    logging.info( 'workstation_profile: %s' % (self.workstation_profile))
+    logging.info( 'workstation_profile: %s' % (workstation_profile))
     reservation = self.ec2.run_instances(ami.id,
        key_name = self.workstation_keypair_name,
        security_groups = [core.workstation_security_group],
@@ -368,7 +319,7 @@ class Manager(object):
        #placement = prefered_availability_zone,
        disable_api_termination = True,
        instance_initiated_shutdown_behavior = 'stop',
-       instance_profile_name = self.workstation_profile # IAM instance profile 
+       instance_profile_name = workstation_profile # IAM instance profile 
        )
     assert(len(reservation.instances) == 1)
     instance = reservation.instances[0]
@@ -443,11 +394,9 @@ class Manager(object):
     core.WaitForVolumeAttached(new_volume)
     snapshot.delete()
     self.ec2.delete_volume(orig_root_volume_id)
-    
     dot_value = 'false'
     if orig_root_volume_termination_setting:
       dot_value = 'true'
-    
     # restore the del on terminate property
     params = {'InstanceId' : instance.id,
               'BlockDeviceMapping.1.DeviceName' : '/dev/sda1',
@@ -455,7 +404,6 @@ class Manager(object):
               'BlockDeviceMapping.1.Ebs.DeleteOnTermination' : dot_value}
     instance.connection.get_status('ModifyInstanceAttribute', params, verb='POST')
     instance.update()
-    
     return
 
   def AddNewVolumeToInstance(self, instance_id, vol_size_gb):
@@ -465,7 +413,6 @@ class Manager(object):
       raise RuntimeError('Adding volumes this large has not been tested.')
     instance = self.__GetInstanceById(instance_id)
     assert(instance)
-
     # select an unused device
     # see http://askubuntu.com/questions/47617/
     # how-to-attach-new-ebs-volume-to-ubuntu-machine-on-aws
