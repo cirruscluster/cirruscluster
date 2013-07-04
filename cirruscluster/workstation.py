@@ -329,8 +329,8 @@ class Manager(object):
     instance = reservation.instances[0]
     instance.add_tag(self.workstation_tag, 'true')
     instance.add_tag('Name', workstation_name) # shown in AWS management console
-    core.WaitForInstanceRunning(instance)
-    core.WaitForInstanceReachable(instance, self.ssh_key)
+    #core.WaitForInstanceRunning(instance)
+    #core.WaitForInstanceReachable(instance, self.ssh_key)
     return
 
   def DeviceExists(self, device_name, instance):
