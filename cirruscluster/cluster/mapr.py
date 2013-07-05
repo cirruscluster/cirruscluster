@@ -68,10 +68,9 @@ class MaprCluster(object, ):
     self.cluster_keypair_name = 'cirrus_cluster'    
     src_region = config.region_name
     dst_regions = core.tested_region_names    
-    config_bucketname = 'cirrus_cluster_config'
     aws_id = None
     aws_secret = None
-    self.ssh_key = core.InitKeypair(aws_id, aws_secret, self.ec2, self.s3, config_bucketname, 
+    self.ssh_key = core.InitKeypair(aws_id, aws_secret, self.ec2, self.s3,  
                                     self.cluster_keypair_name, src_region,
                                     dst_regions)
     # make sure we have a local copy of private ssh key so we can connect

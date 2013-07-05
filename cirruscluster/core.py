@@ -384,14 +384,19 @@ def GetRegion(region_name):
 
 class CirrusAccessIdMetadata(object):
   """ Stores metadata about the initalization of an access id in S3. """
-  def __init__(self, s3, access_id):
+  def __init__(self, s3, access_id = None):
     self.s3 = s3    
-    self.access_id = access_id
-    # bucket name unique by design
-    bucket_name = 'cirrus_user_%s' % (access_id.lower()) 
-    self.bucket = s3.lookup(bucket_name)
-    if not self.bucket:
-      self.bucket = s3.create_bucket(bucket_name, policy='private')
+    
+    # optionallaly override it with provided key (perhaps different iam user)
+    if access_id:
+      bucket_name = 'cirrus_user_%s' % (access_id.lower())
+      self.bucket = s3.lookup(bucket_name)
+      if not self.bucket:
+        self.bucket = s3.create_bucket(bucket_name, policy='private')
+    else:
+      for bucket in s3.get_all_buckets():
+        if bucket.name.startswith('cirrus_user_'):
+          self.bucket = bucket
     assert(self.bucket)
     return
     
