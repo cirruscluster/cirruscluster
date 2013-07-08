@@ -9,6 +9,9 @@
 #- name: Set the background image
 #  shell: gsettings set org.gnome.desktop.background picture-uri file:///usr/share/backgrounds/gnome/Stripes.jpg
 #  sudo: no
+
+- name: make sure Desktop directory exists
+  file: path=/home/ubuntu/Desktop owner=ubuntu group=ubuntu state=directory
   
 - name: Copy the eclipse prefs file to the desktop (must manually import it)  
   copy: src=eclipse_iwct_prefs_v02.epf dest=/home/ubuntu/Desktop/eclipse_prefs_v01.epf owner=ubuntu group=ubuntu
@@ -86,8 +89,6 @@
   shell: chdir=/home/ubuntu/git/cirruscluster python setup.py develop
   ignore_errors: yes
 
-- name: make sure Desktop directory exists
-  file: path=/home/ubuntu/Desktop owner=ubuntu group=ubuntu state=directory
   
 
 # Can't use file module because src of link doesn't yet exist... symlink is dangling until maprfs mounted
