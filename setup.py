@@ -7,7 +7,7 @@ setup(
   packages= find_packages(),
   license='MIT',
   #long_description=open('README.md').read(),
-  install_requires=['distribute>=0.6.45',
+  install_requires=['distribute>=0.6',
                     'passlib>=1.6.1',
                     'paramiko>=1.10.1', 
                     'boto>=2.9.5',                    
