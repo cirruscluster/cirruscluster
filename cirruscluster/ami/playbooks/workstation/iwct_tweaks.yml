@@ -13,6 +13,9 @@
 - name: make sure Desktop directory exists
   file: path=/home/ubuntu/Desktop owner=ubuntu group=ubuntu state=directory
   
+- name: make sure datasets directory exists
+  file: path=/home/ubuntu/Desktop/datasets owner=ubuntu group=ubuntu state=directory
+  
 - name: Copy the eclipse prefs file to the desktop (must manually import it)  
   copy: src=eclipse_iwct_prefs_v02.epf dest=/home/ubuntu/Desktop/eclipse_prefs_v01.epf owner=ubuntu group=ubuntu
   sudo: no
