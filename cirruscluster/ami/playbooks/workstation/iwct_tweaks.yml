@@ -81,8 +81,11 @@
 - name: symlink iwct_import_dataset binary
   file: src=/home/ubuntu/git/iwct/build/iw/apps/iwct_import_dataset.py dest=/home/ubuntu/bin/iwct_import_dataset owner=ubuntu group=ubuntu state=link
   
-- name: symlink iwct_import_dataset binary
+- name: symlink iwct_run_pipeline binary
   file: src=/home/ubuntu/git/iwct/build/iw/apps/iwct_run_pipeline.py dest=/home/ubuntu/bin/iwct_run_pipeline owner=ubuntu group=ubuntu state=link  
+  
+- name: symlink iwct_update_code binary
+  file: src=/home/ubuntu/git/iwct/build/iw/apps/iwct_update_code.py dest=/home/ubuntu/bin/iwct_update_code owner=ubuntu group=ubuntu state=link  
   
 - name: checkout cirrus cluster  
   git: repo=https://github.com/cirruscluster/cirruscluster.git dest=/home/ubuntu/git/cirruscluster
@@ -91,13 +94,13 @@
 - name: install cirrus cluster from source 
   shell: chdir=/home/ubuntu/git/cirruscluster python setup.py develop
   ignore_errors: yes
-
   
 
 # Can't use file module because src of link doesn't yet exist... symlink is dangling until maprfs mounted
 - name: make symlink from mapr to desktop
-  shell: ln -s /mapr/iwct /home/ubuntu/Desktop/maprfs
+  shell: creates=home/ubuntu/Desktop/maprfs ln -s /mapr/iwct /home/ubuntu/Desktop/maprfs
   sudo: no
+  
   
   
   
