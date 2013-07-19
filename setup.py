@@ -6,7 +6,7 @@ setup(
   version='0.0.1-15', # use semantic version conventions
   packages= find_packages(),
   license='MIT',
-  #long_description=open('README.md').read(),
+  long_description=open('README.rst').read(),
   install_requires=['distribute>=0.6',
                     'passlib>=1.6.1',
                     'paramiko>=1.10.1', 
