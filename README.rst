@@ -17,11 +17,7 @@ To get latest release...
 
 or to get current developement version...
 
-``
-git clone https://github.com/heathkh/cirruscluster.git
-python setup.py install
-``
-
+``git clone https://github.com/heathkh/cirruscluster.git; python setup.py install``
 
 Contact
 ------
