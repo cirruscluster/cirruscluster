@@ -3,7 +3,7 @@ from setuptools import find_packages
 
 setup(
   name='cirruscluster',
-  version='0.0.1-15', # use semantic version conventions
+  version='0.0.1-17', # use semantic version conventions
   packages= find_packages(),
   license='MIT',
   long_description=open('README.rst').read(),
