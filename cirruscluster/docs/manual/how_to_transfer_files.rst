@@ -1,8 +1,8 @@
 .. _how_to_transfer_files:
 
-************************************************************
+***************************************************
 How to transfer files to and from IWCT Workstations
-************************************************************
+***************************************************
 
 Connect To Server
 =================
@@ -13,16 +13,16 @@ Use the "Connect To Server" feature to easily drag and drop files from a remote 
 SCP
 ===
 
-Example to copy a file 
+Example to copy a file
 
-.. code:: bash
+.. code-block:: bash
   
    scp  username1@source_host:directory1/filename1 username2@destination_host:directory2/filename2
    
    
 Example to copy a directory recursively
 
-.. code:: bash
+.. code-block:: bash
   
    scp -r username1@source_host:directory1 username2@destination_host:directory2
    
